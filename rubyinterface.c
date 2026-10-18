@@ -4,15 +4,34 @@
 #include "exhaust.h"
 #include "sim.h"
 #include "insn_help.h"
+#include <time.h>
+#include <limits.h>
+
+extern int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w);
+extern void check_sanity(mars_t* mars);
+extern void clear_results(mars_t* mars);
+extern void save_pspaces(mars_t* mars);
+extern void amalgamate_pspaces(mars_t* mars);
+extern void load_warriors(mars_t* mars);
+extern void set_starting_order(unsigned int round, mars_t* mars);
+extern void accumulate_results(mars_t* mars);
+extern s32_t compute_positions(s32_t seed, mars_t* mars);
+extern s32_t rng(s32_t seed);
+extern void panic(char *msg);
+
+
 
 
 VALUE cMars;
+#define PIN_APPEARED -2
+static const rb_data_type_t mars_type = {
+    "exmars/Mars", {0, sim_free_bufs, 0}, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+};
 
 
 static VALUE mars_parse(VALUE self, VALUE fileName) {
     warrior_struct* w;
     mars_t* mars;
-    VALUE* instructions;
     VALUE rWarrior;
     VALUE rInstructions;
     int i;
@@ -20,23 +39,29 @@ static VALUE mars_parse(VALUE self, VALUE fileName) {
     /* bail out if filename is no string */
     Check_Type(fileName, T_STRING);
 
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     
     /* init pmars warrior data structure */
     w = (warrior_struct*)MALLOC(sizeof(warrior_struct));
     memset(w, 0, sizeof(warrior_struct));
-    w->fileName = STR2CSTR(fileName);   
+    w->fileName = StringValueCStr(fileName);
     if (assemble_warrior(mars, w->fileName, w)) {
-        printf("we have a problem.\n");
+        FREE(w->name);
+        FREE(w->version);
+        FREE(w->date);
+        FREE(w->authorName);
+        FREE(w->instBank);
+        FREE(w);
+        rb_raise(rb_eArgError, "Could not assemble warrior");
     }
     
     /* generate ruby data structure */
-    instructions = (VALUE*)MALLOC(sizeof(VALUE)*w->instLen);
-    rWarrior = rb_eval_string("wLocal = Warrior.new");
+    rWarrior = rb_class_new_instance(0, NULL, rb_path2class("Warrior"));
     rb_iv_set(rWarrior, "@name", rb_str_new2(w->name));
     rb_iv_set(rWarrior, "@authorName", rb_str_new2(w->authorName));
     rb_iv_set(rWarrior, "@startPos", INT2FIX(w->offset));   
     rb_iv_set(rWarrior, "@fileName", fileName);
+    rb_iv_set(rWarrior, "@pin", w->pSpaceIndex == PIN_APPEARED ? LONG2NUM(w->pSpaceIDNumber) : Qnil);
 
     rInstructions = rb_ary_new();
 
@@ -50,9 +75,9 @@ static VALUE mars_parse(VALUE self, VALUE fileName) {
 
 
         if (opcode == CMP) {
-            sprintf(replaceOpname, opname[SEQ]);
+            strcpy(replaceOpname, opname[SEQ]);
         }
-        else sprintf(replaceOpname, opname[opcode]);
+        else strcpy(replaceOpname, opname[opcode]);
         
         /* build new instruction */
         sprintf(instrStr, "Instruction.new(\"%s\", \"%s\", \"%c\", %d, \"%c\", %d)",
@@ -65,7 +90,6 @@ static VALUE mars_parse(VALUE self, VALUE fileName) {
         rb_ary_push(rInstructions, rb_eval_string(instrStr));
     }   
     rb_iv_set(rWarrior, "@instructions", rInstructions);
-    FREE(instructions);
     FREE(w->name);
     FREE(w->version);
     FREE(w->date);
@@ -94,10 +118,15 @@ VALUE mars_new(VALUE rClass,
     Check_Type(rMaxWarriorLen, T_FIXNUM);
     Check_Type(rMinWarriorDistance, T_FIXNUM);
     
+    if (NUM2LONG(rWarriors) < 1 || NUM2LONG(rCoreSize) < 1 ||
+        NUM2LONG(rCycles) < 1 || NUM2LONG(rMaxProcesses) < 1 ||
+        NUM2LONG(rMaxWarriorLen) < 1 || NUM2LONG(rMinWarriorDistance) < 0)
+        rb_raise(rb_eArgError, "Invalid simulator settings");
     mars = (mars_t*)malloc(sizeof(mars_t));
+    if (!mars) rb_memerror();
     memset(mars, 0, sizeof(mars_t));
         
-    mars->seed = rng((s32_t)time(0)*0x1d872b41);
+    mars->seed = rng((s32_t)((u32_t)time(0)*0x1d872b41UL));
     mars->rounds = 1;
     mars->cycles = FIX2INT(rCycles);
     mars->coresize = FIX2INT(rCoreSize);
@@ -110,11 +139,21 @@ VALUE mars_new(VALUE rClass,
     mars->errorlevel = WARNING;
     mars->saveOper = 0;
     
-    sim_alloc_bufs(mars);
+    if (mars->nWarriors < 1 || mars->coresize < 1 || mars->coresize > 65535 ||
+        mars->cycles < 1 || mars->processes < 1 || mars->maxWarriorLength < 1 ||
+        mars->maxWarriorLength > mars->coresize || mars->minsep > mars->coresize ||
+        mars->nWarriors > mars->coresize / (mars->minsep ? mars->minsep : mars->maxWarriorLength)) {
+        free(mars);
+        rb_raise(rb_eArgError, "Invalid simulator settings");
+    }
+    if (!sim_alloc_bufs(mars)) rb_memerror();
+    /* Keep input-order ownership stable, even after a rotated final round. */
+    save_pspaces(mars);
+    clear_results(mars);
     
     mars->errmsg[0] = '\0';                /* reserve for future */
 
-    rMarsData = Data_Wrap_Struct(rClass, 0, sim_free_bufs, mars);   
+    rMarsData = TypedData_Wrap_Struct(rClass, &mars_type, mars);
     rb_obj_call_init(rMarsData, 0, 0);
     return rMarsData;
 }
@@ -142,7 +181,7 @@ VALUE mars_initialize(VALUE self) {
     mars_t* mars;
     int rounds = 1;
     rb_iv_set(self, "@rounds", INT2FIX(rounds));
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     mars->rounds = rounds;
     return self;
 }
@@ -153,47 +192,64 @@ VALUE mars_get_rounds(VALUE self) {
 
 VALUE mars_get_coresize(VALUE self) {
     mars_t* mars;
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     return INT2FIX(mars->coresize);
 }
 
 VALUE mars_get_cycles(VALUE self) {
     mars_t* mars;
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     return INT2FIX(mars->cycles);
 }
 
 VALUE mars_get_processes(VALUE self) {
     mars_t* mars;
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     return INT2FIX(mars->processes);
 }
 
 VALUE mars_get_length(VALUE self) {
     mars_t* mars;
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     return INT2FIX(mars->maxWarriorLength);
 }
 
 
 VALUE mars_get_distance(VALUE self) {
     mars_t* mars;
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     return INT2FIX(mars->minsep);
 }
 
 
 VALUE mars_get_warriors(VALUE self) {
     mars_t* mars;
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     return INT2FIX(mars->nWarriors);
+}
+
+VALUE mars_get_fixed_position(VALUE self) {
+    mars_t *mars;
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    return INT2NUM(mars->fixedPosition);
+}
+
+VALUE mars_set_fixed_position(VALUE self, VALUE value) {
+    mars_t *mars;
+    long position = NUM2LONG(value);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    if (position != 0 && (position < (long)mars->minsep || position > ((INT_MAX >> 1) + 1)))
+        rb_raise(rb_eArgError, "fixed_position must be 0 or minimum separation..1073741824");
+    mars->fixedPosition = (int)position;
+    return value;
 }
 
 VALUE mars_set_rounds(VALUE self, VALUE newVal) {
     mars_t* mars;
     Check_Type(newVal, T_FIXNUM);
+    if (NUM2INT(newVal) < 1) rb_raise(rb_eArgError, "rounds must be positive");
     rb_iv_set(self, "@rounds", newVal);
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     mars->rounds = NUM2INT(newVal);
     return self;
 }
@@ -203,7 +259,7 @@ VALUE mars_fight(int argc, VALUE* argv, VALUE self) {
     int seed;
     mars_t* mars;
 
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     if (argc != mars->nWarriors) {
         rb_raise(rb_eArgError, "You have to supply %d warriors instead of %d.", mars->nWarriors, argc);
     }   
@@ -218,8 +274,13 @@ VALUE mars_fight(int argc, VALUE* argv, VALUE self) {
         Check_Type(rInstructionsArray, T_ARRAY);
         Check_Type(rStartPos, T_FIXNUM);
         warrior->start = NUM2INT(rStartPos);
-        warrior->len = RARRAY(rInstructionsArray)->len;
-        warrior->have_pin = 0; /* TODO! */
+        warrior->len = RARRAY_LEN(rInstructionsArray);
+        if (warrior->len < 1 || warrior->len > mars->maxWarriorLength ||
+            warrior->start >= warrior->len || (mars->minsep && warrior->len > mars->minsep))
+            rb_raise(rb_eArgError, "Invalid warrior length or start position");
+        VALUE pin = rb_iv_get(argv[i], "@pin");
+        warrior->have_pin = !NIL_P(pin);
+        warrior->pin = NIL_P(pin) ? 0 : (u32_t)NUM2LONG(pin);
         in = warrior->code;
         
         for (j=0; j<warrior->len; ++j) {
@@ -228,36 +289,39 @@ VALUE mars_fight(int argc, VALUE* argv, VALUE self) {
             VALUE rTmp;
             int tmp;
             
-            VALUE rInsArray = rb_iv_get(RARRAY(rInstructionsArray)->ptr[j], "@data");
+            VALUE rInsArray = rb_iv_get(rb_ary_entry(rInstructionsArray, j), "@data");
             Check_Type(rInsArray, T_ARRAY);
             
+            if (RARRAY_LEN(rInsArray) != 6) rb_raise(rb_eArgError, "Instruction needs six fields");
             if (j == warrior->start) flags |= fl_START;
-            rTmp = RARRAY(rInsArray)->ptr[0];
+            rTmp = rb_ary_entry(rInsArray, 0);
             Check_Type(rTmp, T_FIXNUM);         
             op = NUM2INT(rTmp);
 
-            rTmp = RARRAY(rInsArray)->ptr[1];
+            rTmp = rb_ary_entry(rInsArray, 1);
             Check_Type(rTmp, T_FIXNUM);         
             m = NUM2INT(rTmp);
 
-            rTmp = RARRAY(rInsArray)->ptr[2];
+            rTmp = rb_ary_entry(rInsArray, 2);
             Check_Type(rTmp, T_FIXNUM);         
             ma = NUM2INT(rTmp);
             
-            rTmp = RARRAY(rInsArray)->ptr[4];
+            rTmp = rb_ary_entry(rInsArray, 4);
             Check_Type(rTmp, T_FIXNUM);         
             mb = NUM2INT(rTmp);
             
-            rTmp = RARRAY(rInsArray)->ptr[3];
+            rTmp = rb_ary_entry(rInsArray, 3);
             Check_Type(rTmp, T_FIXNUM);
             tmp = NUM2INT(rTmp);
             in->a = MODS(tmp, mars->coresize);
             
-            rTmp = RARRAY(rInsArray)->ptr[5];
+            rTmp = rb_ary_entry(rInsArray, 5);
             Check_Type(rTmp, T_FIXNUM);
             tmp = NUM2INT(rTmp);
             in->b = MODS(tmp, mars->coresize);
 
+            if (op < 0 || op > STP || m < 0 || m > 6 || ma < 0 || ma > 7 || mb < 0 || mb > 7)
+                rb_raise(rb_eArgError, "Invalid instruction encoding");
             in->in = (flags << flPOS) | OP( op, m, ma, mb );
             ++in;
         }
@@ -265,14 +329,15 @@ VALUE mars_fight(int argc, VALUE* argv, VALUE self) {
     
     check_sanity(mars);
     clear_results(mars);
-    /* seed = mars->fixedPosition ? mars->fixedPosition - mars->minsep : rng((s32_t)time(0)*0x1d872b41); */
+    /* seed = mars->fixedPosition ? mars->fixedPosition - mars->minsep : rng((s32_t)((u32_t)time(0)*0x1d872b41UL)); */
     if (mars->fixedPosition) {
         seed = mars->fixedPosition - mars->minsep;
     } else {
         seed = rng(mars->seed);
     }
 
-    save_pspaces(mars);
+    memcpy(mars->pspacesOrigin, mars->pspaces, sizeof(pspace_t *) * mars->nWarriors);
+    sim_reset_pspaces(mars);
     amalgamate_pspaces(mars);   /* Share P-spaces with equal PINs */
 
     /* Fight rounds rounds. */
@@ -310,7 +375,7 @@ VALUE mars_results_wins(VALUE self, VALUE rWarriorNr, VALUE rSurvivedCount) {
     Check_Type(rSurvivedCount, T_FIXNUM);   
     warriorNr = NUM2INT(rWarriorNr);
     survivedCount = NUM2INT(rSurvivedCount);
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     
     if (warriorNr < 0 || warriorNr >= mars->nWarriors) {
         rb_raise(rb_eRangeError, "warrior nr has to be within range [0, %d], but it is %d.", mars->nWarriors-1, warriorNr);
@@ -330,7 +395,7 @@ VALUE mars_results_losses(VALUE self, VALUE rWarriorNr) {
 
     Check_Type(rWarriorNr, T_FIXNUM);
     warriorNr = NUM2INT(rWarriorNr);
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
 
     if (warriorNr < 0 || warriorNr >= mars->nWarriors) {
         rb_raise(rb_eRangeError, "warrior nr has to be within range [0, %d], but it is %d.", mars->nWarriors-1, warriorNr);
@@ -345,7 +410,7 @@ VALUE mars_results_str(VALUE self) {
     mars_t* mars;
     VALUE rStr;
 
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
 
     if (mars->nWarriors == 2 && !mars->isMultiWarriorOutput) {
         sprintf(str, "%ld %ld\n", mars->results[0*(mars->nWarriors+1) + 1], mars->results[0*(mars->nWarriors+1) + 2]);
@@ -377,7 +442,7 @@ VALUE mars_score(VALUE self, VALUE rWarriorNr) {
 
     Check_Type(rWarriorNr, T_FIXNUM);
     warriorNr = NUM2INT(rWarriorNr);
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
 
     if (warriorNr < 0 || warriorNr >= mars->nWarriors) {
         rb_raise(rb_eRangeError, "warrior nr has to be within range [0, %d], but it is %d.", mars->nWarriors-1, warriorNr);
@@ -409,7 +474,7 @@ VALUE mars_scores(VALUE self) {
     mars_t* mars;
     int i;
 
-    Data_Get_Struct(self, mars_t, mars);
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     rScores = rb_ary_new2(mars->nWarriors);
     for (i=0; i<mars->nWarriors; ++i) {
         rb_ary_store(rScores, i, mars_score(self, INT2FIX(i)));
@@ -417,11 +482,10 @@ VALUE mars_scores(VALUE self) {
     return rScores;
 }
 
-void Init_Mars() {
-    if (!rb_require("Warrior")) {
-        printf("can not load Warrior.\n");
-    }
+RUBY_FUNC_EXPORTED void Init_Mars(void) {
+    rb_require("Warrior");
     cMars = rb_define_class("Mars", rb_cObject);
+    rb_undef_alloc_func(cMars);
     rb_define_singleton_method(cMars, "new", mars_new, 6);
     rb_define_singleton_method(cMars, "standard", mars_new_standard, 1);
     rb_define_singleton_method(cMars, "tiny", mars_new_tiny, 1);
@@ -435,6 +499,8 @@ void Init_Mars() {
     rb_define_method(cMars, "warriors", mars_get_warriors, 0);
     rb_define_method(cMars, "cycles", mars_get_cycles, 0);
 
+    rb_define_method(cMars, "fixed_position", mars_get_fixed_position, 0);
+    rb_define_method(cMars, "fixed_position=", mars_set_fixed_position, 1);
     rb_define_method(cMars, "rounds=", mars_set_rounds, 1);
 
     rb_define_method(cMars, "initialize", mars_initialize, 0);

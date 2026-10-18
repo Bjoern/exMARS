@@ -24,7 +24,7 @@ end
 
 # A corewars individual
 class Warrior
-	attr_accessor :instructions, :startPos, :name, :authorName, :fileName, :id
+	attr_accessor :instructions, :startPos, :name, :authorName, :fileName, :id, :pin
 	
 	
 	def initialize
