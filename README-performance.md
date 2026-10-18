@@ -17,7 +17,7 @@ incompatible runtime settings. Defaults are 8000 core/processes, 80000 cycles,
 100 length/separation. CLI `-l` selects maximum warrior length.
 
 No speed percentage should be inferred by multiplying gains from separate
-experiments. See the benchmark report and raw data supplied with this series
-for the new cross-engine measurements and their workload/semantic limits.
+experiments. See the [benchmark report](benchmarks/comparison/README.md)
+and its raw data for new cross-engine measurements and their workload/semantic limits.
 
 The original README's historical Pentium-era claims remain historical.

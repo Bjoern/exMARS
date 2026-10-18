@@ -25,6 +25,6 @@ and survivors/death order/P-space in early mode. The reference is useful for
 optimization equivalence; the independent pMARS regression fixtures detect
 shared inherited bugs that differential tests alone cannot find.
 
-Benchmark methodology and new results are in the separately supplied comparison
-report. Historical timings describe particular corpora and compiler settings;
+Benchmark methodology and new results are in
+[benchmarks/comparison/README.md](benchmarks/comparison/README.md). Historical timings describe particular corpora and compiler settings;
 they are not promises for other hardware, workloads, or Python API throughput.

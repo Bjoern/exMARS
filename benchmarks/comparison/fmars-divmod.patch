@@ -1,0 +1,17 @@
+--- a/insn.scm
++++ b/insn.scm
+@@ -274,11 +274,11 @@
+     (st (cea ma mb ptb fields)
+         (iter-apply-collect st
+                             (lambda (src dst)
+-                              (if_ dst
++                              (if_ src
+                                    (set_ (core (field dst) ptb)
+-                                         (arfunc src dst))))
++                                         (arfunc dst src))))
+                             fields)
+-        (if_ (apply or_ (map not_ (map cadr fields)))
++        (if_ (apply or_ (map not_ (map car fields)))
+              check-die
+              (push (next ip))))))
+ 

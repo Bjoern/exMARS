@@ -7,3 +7,6 @@ __pycache__/
 build/
 bin/
 *.egg-info/
+/dist/
+/benchmarks/comparison/94top50.txt
+/benchmarks/comparison/nanobm07.txt
