@@ -2510,7 +2510,7 @@ void usage(void)
     printf("exmasr v%d.%d\n", VERSION, REVISION );
     printf("usage: exhaust [opts] warriors...\n");
     printf("opts: -r <rounds>, -c <cycles>, -F <pos>, -s <coresize>,\n"
-           "      -p <maxprocs>, -d <minsep>, -bk\n");
+           "      -p <maxprocs>, -d <minsep>, -bk, -E (safe early, default), -X (exact)\n");
     exit(1);
 }
 
@@ -2781,7 +2781,8 @@ void readargs(int argc, char** argv, mars_t* mars) {
                     switch (c) {
 
                     case 'k': break;
-                    case 'X': break; /* Exact execution is the only mode here. */
+                    case 'E': mars->earlyExit = 1; break;
+                    case 'X': mars->earlyExit = 0; break;
                     case 'b': break;
                     case 'm': mars->isMultiWarriorOutput = 1; break;
 
@@ -2873,6 +2874,7 @@ mars_t* init(int argc, char** argv) {
     mars = (mars_t*)malloc(sizeof(mars_t));
     memset(mars, 0, sizeof(mars_t));
     mars->rounds = 1;
+    mars->earlyExit = 1;
     mars->cycles = 80000;
     mars->coresize = 8000;
     mars->processes = 8000;

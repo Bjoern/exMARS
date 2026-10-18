@@ -4,7 +4,16 @@ The CLI now preserves assembled PIN sharing, uses the bounded pMARS 0.9.6
 expression evaluator, handles the zero placement seed, reads immediate B fields
 after A side effects, and reduces ADD/SUB/MUL without narrow/signed overflow.
 The unsafe SPL early tie is removed: remaining STP writes must execute.
-This branch executes full rounds. `-X` is accepted as an explicit exact-mode flag.
+Safe process-count termination is enabled by default: every surviving warrior
+must have strictly more processes than its remaining execution turns, and no
+STP may exist anywhere in core. Results and all P-space are preserved; final
+transient core/queues can differ. `-X` executes fully; `-E` enables the shortcut
+(last option wins). Direct C callers set `mars_t.earlyExit` explicitly.
+Queue caching, the immediate/direct MOV.I fast path, DAT-count termination and
+fixed-hill builds belong only to the optional performance stage.
+
+Run `python tests/engine/check_early.py` for positive early exits, strict process
+boundaries, pending/dormant STP, and 4,160 results/P-space cases in both modes.
 
 Run `make test` (Python 3 is needed only for the test driver). Native checks:
 
