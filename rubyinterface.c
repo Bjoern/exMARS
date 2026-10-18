@@ -125,6 +125,7 @@ VALUE mars_new(VALUE rClass,
     mars = (mars_t*)malloc(sizeof(mars_t));
     if (!mars) rb_memerror();
     memset(mars, 0, sizeof(mars_t));
+    mars->earlyExit = 1;
         
     mars->seed = rng((s32_t)((u32_t)time(0)*0x1d872b41UL));
     mars->rounds = 1;
@@ -139,6 +140,13 @@ VALUE mars_new(VALUE rClass,
     mars->errorlevel = WARNING;
     mars->saveOper = 0;
     
+    {
+        const char *fixed_error = sim_fixed_settings_error(mars);
+        if (fixed_error) {
+            free(mars);
+            rb_raise(rb_eArgError, "%s", fixed_error);
+        }
+    }
     if (mars->nWarriors < 1 || mars->coresize < 1 || mars->coresize > 65535 ||
         mars->cycles < 1 || mars->processes < 1 || mars->maxWarriorLength < 1 ||
         mars->maxWarriorLength > mars->coresize || mars->minsep > mars->coresize ||
@@ -226,6 +234,19 @@ VALUE mars_get_warriors(VALUE self) {
     mars_t* mars;
     TypedData_Get_Struct(self, mars_t, &mars_type, mars);
     return INT2FIX(mars->nWarriors);
+}
+
+VALUE mars_get_early_exit(VALUE self) {
+    mars_t* mars;
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    return mars->earlyExit ? Qtrue : Qfalse;
+}
+
+VALUE mars_set_early_exit(VALUE self, VALUE value) {
+    mars_t* mars;
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    mars->earlyExit = RTEST(value);
+    return value;
 }
 
 VALUE mars_get_fixed_position(VALUE self) {
@@ -502,6 +523,8 @@ RUBY_FUNC_EXPORTED void Init_Mars(void) {
     rb_define_method(cMars, "fixed_position", mars_get_fixed_position, 0);
     rb_define_method(cMars, "fixed_position=", mars_set_fixed_position, 1);
     rb_define_method(cMars, "rounds=", mars_set_rounds, 1);
+    rb_define_method(cMars, "early_exit", mars_get_early_exit, 0);
+    rb_define_method(cMars, "early_exit=", mars_set_early_exit, 1);
 
     rb_define_method(cMars, "initialize", mars_initialize, 0);
 

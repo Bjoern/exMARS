@@ -277,6 +277,8 @@ typedef struct mars_st {
     
     s32_t seed;
     int dbgproceed;
+    /* Opt-in result/P-space equivalence; transient final core/queues may differ. */
+    int earlyExit;
 } mars_t;
 
 /* The following holds the order in which opcodes, modifiers, and addr_modes

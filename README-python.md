@@ -29,5 +29,6 @@ startPos, name, authorName, fileName and pin. `scores()`,
 `wins(i, survivor_count)`, `losses(i)` and `results_str()` expose results.
 
 Run `python tests/python_bindings/run.py bin` for binding regressions.
-This branch uses exact simulation; optional performance patches add early_exit.
+Safe early ties are enabled by default. Set `m.early_exit = False` for exact
+final core/queue state; scores and P-space are preserved in both modes.
 Do not call a simulator instance concurrently from different threads.

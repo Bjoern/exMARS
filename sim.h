@@ -5,6 +5,7 @@
 #define SIM_H
 
 #include "exhaust.h"
+#include "hill_config.h"
 #include "pspace.h"
 
 /*gable
@@ -33,6 +34,7 @@ int sim_load_warrior(mars_t* mars, unsigned int pos, const insn_t* const code, u
    unsigned int cycles, void **ptr_result );
 */
 
+/* Returns -1 and sets errmsg if a fixed build receives conflicting settings. */
 int sim_mw(mars_t* mars, const field_t * const war_pos_tab, u32_t *death_tab );
 
 #endif /* SIM_H */

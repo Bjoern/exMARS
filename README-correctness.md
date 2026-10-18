@@ -4,7 +4,8 @@ The CLI now preserves assembled PIN sharing, uses the bounded pMARS 0.9.6
 expression evaluator, handles the zero placement seed, reads immediate B fields
 after A side effects, and reduces ADD/SUB/MUL without narrow/signed overflow.
 The unsafe SPL early tie is removed: remaining STP writes must execute.
-This branch executes full rounds. `-X` is accepted as an explicit exact-mode flag.
+The correctness-only patch executes full rounds. `-X` requests exact execution
+throughout the series, including after the optional performance patch.
 
 Run `make test` (Python 3 is needed only for the test driver). Native checks:
 

@@ -101,7 +101,7 @@ Mars_init(MarsObject *self, PyObject *args, PyObject *kwds)
         return -1;
     }
     memset(self->mars, 0, sizeof(mars_t));
-
+    self->mars->earlyExit = 1;
         
     self->mars->seed = rng((s32_t)time(0)*0x1d872b41);
     self->mars->rounds = 1;
@@ -116,6 +116,15 @@ Mars_init(MarsObject *self, PyObject *args, PyObject *kwds)
     self->mars->errorlevel = WARNING;
     self->mars->saveOper = 0;
     
+    {
+        const char *fixed_error = sim_fixed_settings_error(self->mars);
+        if (fixed_error) {
+            PyErr_SetString(PyExc_ValueError, fixed_error);
+            free(self->mars);
+            self->mars = NULL;
+            return -1;
+        }
+    }
     if (!sim_alloc_bufs(self->mars)) {
         free(self->mars);
         self->mars = NULL;
@@ -613,6 +622,20 @@ Mars_set_rounds(MarsObject *self, PyObject *value, void *closure)
 }
 
 static PyObject * Mars_get_coresize(MarsObject *self, void *closure) { return PyLong_FromLong(self->mars->coresize); }
+static PyObject * Mars_get_early_exit(MarsObject *self, void *closure) {
+    return PyBool_FromLong(self->mars->earlyExit);
+}
+static int Mars_set_early_exit(MarsObject *self, PyObject *value, void *closure) {
+    int enabled;
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the early_exit attribute");
+        return -1;
+    }
+    enabled = PyObject_IsTrue(value);
+    if (enabled < 0) return -1;
+    self->mars->earlyExit = enabled;
+    return 0;
+}
 static PyObject * Mars_get_fixed_position(MarsObject *self, void *closure) {
     return PyLong_FromLong(self->mars->fixedPosition);
 }
@@ -641,6 +664,8 @@ static PyObject * Mars_get_warriors(MarsObject *self, void *closure) { return Py
 // Define the properties
 static PyGetSetDef Mars_getseters[] = {
     {"rounds", (getter)Mars_get_rounds, (setter)Mars_set_rounds, "Number of rounds to fight", NULL},
+    {"early_exit", (getter)Mars_get_early_exit, (setter)Mars_set_early_exit,
+     "Allow proven early ties (default True); preserves results/P-space, not final core/queues", NULL},
     {"fixed_position", (getter)Mars_get_fixed_position, (setter)Mars_set_fixed_position,
      "Placement seed like the CLI's -F (0 = random, default); every fight() then repeats pMARS's placements", NULL},
     {"coresize", (getter)Mars_get_coresize, NULL, "Size of core memory", NULL},

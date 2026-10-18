@@ -23,12 +23,37 @@ def main():
                         help='Default: bin/ for generic, a hill-named subdirectory for specialization')
     parser.add_argument('--python-extension', action='store_true',
                         help='Also build a module for the running Windows CPython with MinGW GCC')
+    parser.add_argument('--fixed-coresize', type=int, default=0,
+                        help='Fix core size; 0 keeps it dynamic (default)')
+    parser.add_argument('--fixed-processes', type=int, default=0,
+                        help='Fix process limit; 0 keeps it dynamic (default)')
+    parser.add_argument('--fixed-cycles', type=int, default=0,
+                        help='Fix cycles per warrior; 0 keeps it dynamic (default)')
+    parser.add_argument('--max-length', type=int, help='Default CLI warrior length limit')
+    parser.add_argument('--min-distance', type=int, help='Default CLI minimum separation')
     args = parser.parse_args()
-    settings = {}
-    fixed_definitions = []
+    for name, limit in [('fixed_coresize', 65536), ('fixed_processes', 2147483647),
+                        ('fixed_cycles', 2147483647)]:
+        if not 0 <= getattr(args, name) <= limit:
+            parser.error(f'--{name.replace("_", "-")} must be 0..{limit}')
+    for name in ('max_length', 'min_distance'):
+        if getattr(args, name) is not None and getattr(args, name) <= 0:
+            parser.error(f'--{name.replace("_", "-")} must be positive')
+    settings = dict(coresize=args.fixed_coresize, processes=args.fixed_processes,
+                    cycles=args.fixed_cycles)
+    fixed_definitions = [f'-DEXMARS_FIXED_{name.upper()}={value}'
+                         for name, value in settings.items() if value]
+    if args.max_length is not None:
+        fixed_definitions.append(f'-DEXMARS_DEFAULT_LENGTH={args.max_length}')
+    if args.min_distance is not None:
+        fixed_definitions.append(f'-DEXMARS_DEFAULT_MINSEP={args.min_distance}')
     source = Path(__file__).resolve().parent
     if args.output_dir is None:
         args.output_dir = source / 'bin'
+        if any(settings.values()) or args.max_length is not None or args.min_distance is not None:
+            tag = (f'hill-c{args.fixed_coresize}-p{args.fixed_processes}-t{args.fixed_cycles}'
+                   f'-l{args.max_length or 100}-d{args.min_distance or 100}')
+            args.output_dir /= tag
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     suffix = '.exe' if platform.system() == 'Windows' else ''
@@ -58,7 +83,7 @@ def main():
                               text=True, check=True).stdout
     (output / 'build.json').write_text(json.dumps(
         {'compiler': compiler, 'commands': commands, 'fixed_settings': settings,
-         'cli_defaults': {'max_length': 100, 'min_distance': 100}}, indent=2), encoding='utf-8')
+         'cli_defaults': {'max_length': args.max_length, 'min_distance': args.min_distance}}, indent=2), encoding='utf-8')
     print(f'Built optimized and reference simulators in {output}')
 
 

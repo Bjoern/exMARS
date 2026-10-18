@@ -23,11 +23,25 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
-#ifdef _MSC_VER
-#define strtok_r(str, delim, saveptr) strtok_s(str, delim, saveptr)
-#define strdup _strdup
-#endif
 #include <time.h>
+/* Add this to the top of pmars.c */
+
+#include <string.h>
+
+/* ==========================================================
+ * MSVC (Windows) Compatibility Fix
+ * ==========================================================
+ */
+#ifdef _MSC_VER
+    /* MSVC doesn't have strtok_r, it has strtok_s */
+    /* This defines strtok_r as a macro that calls strtok_s */
+    #define strtok_r(str, delim, saveptr) strtok_s(str, delim, saveptr)
+
+    /* MSVC uses _strdup for strdup */
+    #define strdup _strdup
+#endif
+/* ==========================================================
+ */
 #include <stdio.h>
 #include "exhaust.h"
 #include "sim.h"
@@ -203,7 +217,7 @@ void disposesrc(src_st* r);
 int globalswitch_warrior(mars_t* mars, warrior_struct* w, char* str, uShrt idx, uShrt loc, uShrt lspnt);
 void encode_warrior(mars_t* mars, warrior_struct* w, uShrt sspnt);
 s32_t rng(s32_t seed);
-void panic(char *msg);
+void panic(const char *msg);
 int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w);
 void clear_results(mars_t* mars);
 void save_pspaces(mars_t* mars);
@@ -2497,7 +2511,7 @@ s32_t rng(s32_t seed)
 }
 
 
-void panic(char *msg)
+void panic(const char *msg)
 {
     /*  fprintf(stderr, "%s: ", prog_name );*/
     fprintf(stderr, "%s", msg );
@@ -2510,7 +2524,13 @@ void usage(void)
     printf("exmasr v%d.%d\n", VERSION, REVISION );
     printf("usage: exhaust [opts] warriors...\n");
     printf("opts: -r <rounds>, -c <cycles>, -F <pos>, -s <coresize>,\n"
-           "      -p <maxprocs>, -d <minsep>, -bk\n");
+           "      -p <maxprocs>, -l <maxlen>, -d <minsep>, -bk, -X\n"
+           "      -X: disable default safe early ties; preserve final core/queues\n      -E: enable safe early ties (default; compatibility option)\n");
+#if EXMARS_FIXED_CORESIZE || EXMARS_FIXED_PROCESSES || EXMARS_FIXED_CYCLES
+    printf("compiled constants (0=dynamic): core=%u processes=%lu cycles=%lu\n",
+           (unsigned)EXMARS_FIXED_CORESIZE, (unsigned long)EXMARS_FIXED_PROCESSES,
+           (unsigned long)EXMARS_FIXED_CYCLES);
+#endif
     exit(1);
 }
 
@@ -2781,9 +2801,10 @@ void readargs(int argc, char** argv, mars_t* mars) {
                     switch (c) {
 
                     case 'k': break;
-                    case 'X': break; /* Exact execution is the only mode here. */
                     case 'b': break;
                     case 'm': mars->isMultiWarriorOutput = 1; break;
+                    case 'E': mars->earlyExit = 1; break;
+                    case 'X': mars->earlyExit = 0; break;
 
                     case 'F':
                         if ( n == argc-1 || !isdigit(argv[n+1][0]) )
@@ -2799,6 +2820,15 @@ void readargs(int argc, char** argv, mars_t* mars) {
                         mars->coresize = atoi( argv[++n] );
                         if ( mars->coresize <= 0 )
                             panic( "core size must be > 0\n");
+                        break;
+
+                    case 'l':
+                        if (n == argc-1 || !isdigit(argv[n+1][0]))
+                            panic("bad argument for option -l\n");
+                        c = 0;
+                        mars->maxWarriorLength = atoi(argv[++n]);
+                        if ((int)mars->maxWarriorLength <= 0)
+                            panic("maximum warrior length must be > 0\n");
                         break;
 
                     case 'd':
@@ -2872,13 +2902,14 @@ mars_t* init(int argc, char** argv) {
     mars_t* mars = 0;
     mars = (mars_t*)malloc(sizeof(mars_t));
     memset(mars, 0, sizeof(mars_t));
+    mars->earlyExit = 1;
     mars->rounds = 1;
-    mars->cycles = 80000;
-    mars->coresize = 8000;
-    mars->processes = 8000;
-    mars->maxWarriorLength = 100;
+    mars->cycles = EXMARS_INITIAL_CYCLES;
+    mars->coresize = EXMARS_INITIAL_CORE;
+    mars->processes = EXMARS_INITIAL_PROCESSES;
+    mars->maxWarriorLength = EXMARS_DEFAULT_LENGTH;
     mars->seed = rng((s32_t)time(0)*0x1d872b41);
-    mars->minsep = 100;
+    mars->minsep = EXMARS_DEFAULT_MINSEP;
     mars->nWarriors = 2;
     /* pmars */
     mars->errorcode = SUCCESS;
@@ -2887,6 +2918,10 @@ mars_t* init(int argc, char** argv) {
     mars->errmsg[0] = '\0';                /* reserve for future */
 
     readargs(argc, argv, mars);
+    {
+        const char *fixed_error = sim_fixed_settings_error(mars);
+        if (fixed_error) panic(fixed_error);
+    }
     if (!sim_alloc_bufs(mars)) {
         printf("memory alloc failed.\n");
         exit(1);
@@ -3022,7 +3057,7 @@ int main(int argc, char** argv) {
 
         nalive = sim_mw(mars, mars->startPositions, mars->deaths);
         if (nalive<0)
-            panic("simulator panic!\n");    
+            panic(mars->errmsg);
 
         accumulate_results(mars);
     }
@@ -3035,7 +3070,6 @@ int main(int argc, char** argv) {
     FREE(warriors);
 	return 0;
 }
-
 
 /* * =================================================================
  * NEW FUNCTION FOR IN-MEMORY PARSING
