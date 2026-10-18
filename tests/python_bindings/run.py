@@ -27,6 +27,7 @@ FIXTURES = os.path.join(HERE, "..", "pmars_compat")
 ap = argparse.ArgumentParser()
 ap.add_argument("bin_dir")
 ap.add_argument("--exmars")
+ap.add_argument("--exact", action="store_true", help="Disable safe early termination")
 ap.add_argument("--pmars")
 ap.add_argument("--hills")
 ap.add_argument("--sample", type=int, default=12)
@@ -60,6 +61,9 @@ def cli(cmd):
 
 def standard(rounds, position=0):
     m = Mars.Mars(2, 8000, 80000, 8000, 100, 100)
+    assert m.early_exit is True
+    m.early_exit = not args.exact
+    assert m.early_exit == (not args.exact)
     m.rounds = rounds
     m.fixed_position = position
     return m
@@ -130,6 +134,7 @@ if args.hills:
         ws = d["warriors"]
         pairs = random.Random(suite).sample([(i, j) for i in range(len(ws)) for j in range(i, len(ws))], args.sample)
         shared = Mars.Mars(2, p["coreSize"], p["cycles"], p["tasks"], p["maxLength"], sep)
+        shared.early_exit = not args.exact
         shared.rounds = args.rounds
         parsed = {}
         for i, j in pairs:
@@ -140,13 +145,14 @@ if args.hills:
             shared.fixed_position = seed
             reused = rows(shared.fight(*(parsed[f] for f in files)))
             fresh = Mars.Mars(2, p["coreSize"], p["cycles"], p["tasks"], p["maxLength"], sep)
+            fresh.early_exit = not args.exact
             fresh.rounds, fresh.fixed_position = args.rounds, seed
             new = rows(fresh.fight(*(fresh.parse_file(f) for f in files)))
             common = ["-s", str(p["coreSize"]), "-c", str(p["cycles"]), "-p", str(p["tasks"]), "-l", str(p["maxLength"]),
                       "-d", str(sep), "-r", str(args.rounds), "-F", str(seed)]
             label = f"{suite} {ws[i]} vs {ws[j]} -F {seed}"
             check(f"{label}: reused instance = fresh", reused, new)
-            check(f"{label}: Python = CLI", reused, cli([exmars, *common, *files]))
+            check(f"{label}: Python = CLI", reused, cli([exmars, *(["-X"] if args.exact else []), *common, *files]))
             if args.pmars:
                 check(f"{label}: Python = pMARS", reused, cli([args.pmars, "-b", "-k", "-S", str(p["pspace"]), *common, *files]))
 

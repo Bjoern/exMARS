@@ -31,3 +31,6 @@ startPos, name, authorName, fileName and pin. `scores()`,
 Run `python tests/python_bindings/run.py bin` for binding regressions.
 This branch uses exact simulation; optional performance patches add early_exit.
 Do not call a simulator instance concurrently from different threads.
+
+Safe process-count termination defaults to `True` on this branch. Set
+`m.early_exit = False` for full execution; both modes preserve results/P-space.
