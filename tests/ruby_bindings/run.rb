@@ -38,6 +38,8 @@ def marker(n)
 end
 [true, false].each do |early|
   m = Mars.standard(2)
+  check('default early exit', m.early_exit, true)
+  m.early_exit = early
   m.fixed_position = 4000
   first = parse_text(m, "ldp.ab #0,r\nseq.ab #7999,r\ndat 0,0\njmp 0\nr dat 0,0")
   idle = m.parse(File.join(FIXTURES, 'idle.red'))
@@ -63,6 +65,7 @@ end
   %w[expression immediate_b immediate_b_stp wide_fields seed_zero].each do |name|
     core = name == 'wide_fields' ? 55440 : 8000
     m = Mars.new(2, core, 1000, 8000, 100, 100)
+    m.early_exit = early
     m.rounds = name == 'seed_zero' ? 20 : 10
     m.fixed_position = name == 'seed_zero' ? 100 : 4000
     files = name == 'seed_zero' ? %w[idle.red seed_zero.red] : [name + '.red', 'idle.red']
@@ -99,10 +102,10 @@ if ARGV[1]
     [true, false].each do |early|
       12.times do |i|
         indices = [i, (i + 17) % files.length]
-        m.rounds, m.fixed_position = 200, 4000 + i
+        m.early_exit, m.rounds, m.fixed_position = early, 200, 4000 + i
         got = rows(m, *indices.map { |j| parsed[j] })
         fresh = Mars.standard(2)
-        fresh.rounds, fresh.fixed_position = 200, 4000 + i
+        fresh.early_exit, fresh.rounds, fresh.fixed_position = early, 200, 4000 + i
         check("#{suite}/#{early}/#{i} reused=fresh", got, rows(fresh, *indices.map { |j| parsed[j] }))
         out, err, status = Open3.capture3(ARGV[0], *(early ? [] : ['-X']), '-r', '200', '-F', (4000 + i).to_s, *indices.map { |j| File.join(dir, files[j]) })
         raise err unless status.success?
