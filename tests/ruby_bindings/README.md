@@ -9,3 +9,6 @@ Ruby 3.4 APIs replace removed string/array internals. Every fight restores
 input-order P-space, clears/private-resets it, then shares equal PINs (including
 zero). P-space persists only within a match. `fixed_position` matches CLI -F.
 Assembly and malformed warrior inputs raise exceptions. Tests are AI-assisted.
+
+Safe process-count termination is available on the Ruby maintenance branch.
+`early_exit` defaults to true; set it to false for full execution.

@@ -277,7 +277,7 @@ typedef struct mars_st {
     
     s32_t seed;
     int dbgproceed;
-    /* Opt-in result/P-space equivalence; transient final core/queues may differ. */
+    /* Results/P-space preserved; zero requests full execution. */
     int earlyExit;
 } mars_t;
 

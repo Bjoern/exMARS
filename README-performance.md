@@ -21,3 +21,13 @@ experiments. See the benchmark report and raw data supplied with this series
 for the new cross-engine measurements and their workload/semantic limits.
 
 The original README's historical Pentium-era claims remain historical.
+
+## Stage boundary
+
+The safe process-count shortcut, default early mode and CLI `-X`/`-E` are
+provided by correctness (01). Ruby (02) and Python (03) expose `early_exit`.
+This performance stage adds queue caching, immediate/direct MOV.I specialization,
+DAT-count termination and fixed-hill builds. Its two-warrior process-count test
+is conservative; both it and the general scheduler require strict survival
+budgets and absence of STP. DAT-count termination is a separate proof available
+only in this stage. `-X` disables both early-exit proofs.

@@ -32,3 +32,6 @@ Run `python tests/python_bindings/run.py bin` for binding regressions.
 Safe early ties are enabled by default. Set `m.early_exit = False` for exact
 final core/queue state; scores and P-space are preserved in both modes.
 Do not call a simulator instance concurrently from different threads.
+
+Safe process-count termination defaults to `True` on this branch. Set
+`m.early_exit = False` for full execution; both modes preserve results/P-space.
