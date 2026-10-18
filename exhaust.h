@@ -277,6 +277,8 @@ typedef struct mars_st {
     
     s32_t seed;
     int dbgproceed;
+    /* Results/P-space preserved; zero requests full execution. */
+    int earlyExit;
 } mars_t;
 
 /* The following holds the order in which opcodes, modifiers, and addr_modes

@@ -581,6 +581,7 @@ sim_proper(mars_t* mars, const field_t * const war_pos_tab, u32_t* death_tab )
     insn_t* const CoreEnd = core + coresize; /* point after last instruction */
     u32_t cycles = nwar * mars->cycles; /* set instruction executions until tie counter */
     int alive_cnt = nwar;
+    int stp_present = -1;
     u32_t max_alive_proc = nwar * mars->processes; 
     insn_t **pofs = queue_end-1;
     u32_t pspaceSize = mars->pspaceSize;
@@ -782,7 +783,35 @@ sim_proper(mars_t* mars, const field_t * const war_pos_tab, u32_t* death_tab )
                     ++w->nprocs;
                     queue(pta);
                 }
-                /* Execute remaining turns: they may still write P-space. */
+                /* One turn can kill at most one process. Count each survivor's
+                 * remaining turns, starting with the next scheduled warrior.
+                 * Equality is insufficient: its last process could still die. */
+                if (mars->earlyExit && cycles < max_alive_proc) {
+                    unsigned remaining = cycles - 1;
+                    unsigned base = remaining / alive_cnt, extra = remaining % alive_cnt;
+                    unsigned slot = 0;
+                    w_t *candidate = w->succ;
+                    do {
+                        if (candidate->nprocs <= base + (slot < extra)) break;
+                        candidate = candidate->succ;
+                        ++slot;
+                    } while (candidate != w->succ);
+                    if (slot == (unsigned)alive_cnt) {
+                        /* Only MOV.I changes opcodes, by copying existing ones.
+                         * Scan actual core, including dormant/direct-C cells.
+                         * Once absent, STP cannot reappear within this round. */
+                        if (stp_present < 0) {
+                            unsigned i;
+                            stp_present = 0;
+                            for (i = 0; i < coresize; ++i)
+                                if (((core[i].in >> opPOS) & opMASK) == EX_STP) {
+                                    stp_present = 1;
+                                    break;
+                                }
+                        }
+                        if (!stp_present) goto out;
+                    }
+                }
             }
             else {
                 /* DAT */
