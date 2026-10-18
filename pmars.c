@@ -23,6 +23,10 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+#ifdef _MSC_VER
+#define strtok_r(str, delim, saveptr) strtok_s(str, delim, saveptr)
+#define strdup _strdup
+#endif
 #include <time.h>
 #include <stdio.h>
 #include "exhaust.h"
@@ -3030,5 +3034,185 @@ int main(int argc, char** argv) {
     
     FREE(warriors);
 	return 0;
+}
+
+
+/* * =================================================================
+ * NEW FUNCTION FOR IN-MEMORY PARSING
+ * Add this to the end of pmars.c
+ * =================================================================
+ */
+#include <string.h> // Make sure this is at the top of pmars.c
+
+int assemble_warrior_from_string(mars_t* mars, const char* redcode_string, warrior_struct* w)
+{
+    /* Most setup is copied directly from assemble_warrior */
+    uChar   cont = TRUE, conLine = FALSE, i;
+    uShrt   lines;                /* logical and physical lines */
+    uShrt   spnt = 0;             /* index/pointer to sline and lline */
+
+    /* release all allocated memory */
+    mars->errorlevel = WARNING;
+    mars->errorcode = SUCCESS;
+    *(mars->errmsg) = '\0';
+    mars->errnum = mars->warnum = 0;
+
+    mars->pass = 0;
+
+    mars->srctbl = NULL;
+    mars->sline[0] = mars->sline[1] = NULL;
+    mars->reftbl = NULL;
+    mars->symtbl = NULL;
+    mars->symnum = 0;
+
+    lines = 0;
+    mars->ierr = 0;
+
+    if (mars->errkeep == NULL) {
+        if ((mars->errkeep = (err_st *) MALLOC(sizeof(err_st) * ERRMAX)) == NULL)
+            MEMORYERROR;
+    }
+
+    w->name = pstrdup(unknown);
+    w->authorName = pstrdup(anonymous);
+    w->date = pstrdup("");
+    w->version = pstrdup("");
+    w->pSpaceIndex = UNSHARED;
+    w->instBank = NULL;
+    w->instLen = 0;
+    mars->dbgproceed = TRUE;
+    mars->dbginfo = FALSE;
+    mars->noassert = TRUE;
+
+    addpredefs(mars);
+
+    /* * ==================================================
+     * This is the REPLACEMENT for the file-reading loop 
+     * ==================================================
+     */
+    char* redcode_copy = strdup(redcode_string); /* Need a mutable copy for strtok_r */
+    if (redcode_copy == NULL) MEMORYERROR;
+    
+    char* saveptr;
+    char* line = strtok_r(redcode_copy, "\n\r", &saveptr); /* Split by newline or carriage return */
+    char pstart = 0;
+    lines = 0;
+    mars->aline = NULL;
+
+    while (line != NULL) {
+        lines++;
+        i = 0; // Reset index for get_token
+        
+        // Copy the line into the mars buffer for processing
+        strncpy(mars->buf, line, MAXALLCHAR - 1);
+        mars->buf[MAXALLCHAR - 1] = '\0'; // Ensure null termination
+        
+        // This logic is identical to the file loop
+        switch (get_token(mars->buf, &i, mars->token)) {
+        case COMMTOKEN:
+            if ((globalswitch_warrior(mars, w, mars->buf, (uShrt) i, lines, spnt))) { /* REDCODE? */
+                switch (pstart) {
+                case 0:
+                    disposeline(mars->sline[spnt]);
+                    mars->sline[spnt] = mars->lline[spnt] = NULL;
+                    pstart++;
+                    break;
+                case 1:
+                    pstart++;
+                    /* fallthru */
+                case 2:
+                    line = NULL; // Stop processing
+                    break;
+                }
+            }
+            break;
+        case NONE:
+            break; // Blank line
+        default:
+            nocmnt(mars->buf);                /* saving some space */
+            // Using "from_string" as a placeholder for the source name
+            addline(mars, mars->buf, addlinesrc(mars, "from_string", lines), spnt);
+            break;
+        }
+        
+        if (line != NULL) {
+            line = strtok_r(NULL, "\n\r", &saveptr); // Get next line
+        }
+    }
+    free(redcode_copy); // Free the mutable copy
+    /* ==================================================
+     * End of new logic
+     * ==================================================
+     */
+    
+    if (pstart)
+        pstart--;
+
+    mars->line = 0;
+    expand(mars, spnt);
+
+    if (mars->symtbl) {
+        grp_st *tmp;
+        *(mars->buf) = '\0';
+        for (tmp = mars->symtbl; tmp; tmp = tmp->nextsym) {
+            if (*(mars->buf))
+                if (!concat(mars->buf, " "))
+                    break;
+            if (!concat(mars->buf, tmp->symn))
+                break;
+        }
+        errprn(mars, DLBERR, (line_st *) NULL, mars->buf);
+        disposegrp(mars->symtbl);
+        mars->symtbl = NULL;
+        mars->symnum = 0;
+    }
+    spnt = 1 - spnt;
+    mars->pass++;
+
+    if (mars->noassert)
+        errprn(mars, NASERR, (line_st *) NULL, "");
+
+    /* printf("Entering pass 2 (parsing and loading)\n"); */
+    encode_warrior(mars, w, spnt);
+
+    mars->dbginfo = FALSE;
+    mars->dbgproceed = TRUE;
+    /* release all allocated memory */
+    cleanmem(mars);
+    while (mars->srctbl) {
+        src_st *tmp = mars->srctbl;
+        mars->srctbl = mars->srctbl->nextsrc;
+        FREE(tmp->src);
+        FREE(tmp);
+    }
+
+    if (mars->errnum) {
+        FREE(w->instBank);
+        w->instLen = 0;
+    }
+    if (mars->errnum) {
+        sprintf(mars->outs, errNumMsg, mars->errnum);
+        textout(mars->outs);
+    }
+    if (mars->warnum) {
+        sprintf(mars->outs, warNumMsg, mars->warnum);
+        textout(mars->outs);
+    }
+    while (mars->ierr)
+        if (mars->errkeep[--(mars->ierr)].num > 1) {
+            sprintf(mars->outs, duplicateMsg, mars->errkeep[mars->ierr].loc, mars->errkeep[mars->ierr].num);
+            textout(mars->outs);
+        }
+    if (mars->errnum + mars->warnum) {
+        sprintf(mars->outs, "\n");
+        textout(mars->outs);
+    }
+
+    if (mars->errnum)
+        mars->errorcode = PARSEERR;
+    else
+        mars->errorcode = SUCCESS;
+    reset_regs(mars);
+    return (mars->errorcode);
 }
 
