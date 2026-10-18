@@ -494,10 +494,10 @@ sim_mw(mars_t* mars, const field_t *const war_pos_tab, u32_t* death_tab)
 #define IPINCMOD(x) do { if ( ++(x) == CoreEnd ) (x) = core; } while (0)
 #define DECMOD(x) do { if ((x) == 0) (x)=coresize1; else --(x); } while (0)
 #define IPDECMOD(x) do { if ((x)==0) (x)=CoreEnd1; else --(x); } while (0)
-#define ADDMOD(z,x,y) do { (z) = (x)+(y); if ((z)>=coresize) (z) -= coresize; } while (0)
+#define ADDMOD(z,x,y) do { unsigned int t_ = (unsigned int)(x)+(y); if (t_>=coresize) t_ -= coresize; (z) = t_; } while (0)
 /*#define SUBMOD(z,x,y) do { (z) = (x)-(y); if ((int)(z)<0) (z) += coresize; } while (0)*/
 /* z is unsigned! overflow occurs. */
-#define SUBMOD(z,x,y) do { (z) = (x)-(y); if ((z)>=coresize) (z) += coresize; } while (0)
+#define SUBMOD(z,x,y) do { unsigned int t_ = (unsigned int)(x)-(y); if (t_>=coresize) t_ += coresize; (z) = t_; } while (0)
 
 /* private macros to access p-space. */
 #define UNSAFE_PSPACE_SET(warid, paddr, val) do {           \
@@ -782,17 +782,7 @@ sim_proper(mars_t* mars, const field_t * const war_pos_tab, u32_t* death_tab )
                     ++w->nprocs;
                     queue(pta);
                 }
-                /* in the endgame, check if a tie is inevitable */
-                if (cycles < max_alive_proc) {
-                    w_t* w_iterator = w->succ;
-
-                    /* break if all warriors have more processes than cycles */
-                    while ((w_iterator->nprocs * alive_cnt > cycles) && (w_iterator != w)) w_iterator = w_iterator->succ;
-                    if (w_iterator->nprocs*alive_cnt  > cycles) {
-                        /*printf("stopping at %d\n", cycles);*/
-                        goto out;
-                    }
-                }
+                /* Execute remaining turns: they may still write P-space. */
             }
             else {
                 /* DAT */
@@ -841,6 +831,8 @@ sim_proper(mars_t* mars, const field_t * const war_pos_tab, u32_t* death_tab )
         } else if (mode == EX_IMMEDIATE<<mBITS) {
             /*printf("IMMEDIATE\n");*/
             ptb = ip;
+            rb_a = ip->a;
+            rb_b = ip->b;
         } else if (mode == EX_BPOSTINC<<mBITS) {
             /*printf("BPOSTINC\n");*/
             ptb = ip + rb_b; if (ptb >= CoreEnd) ptb -= coresize;
@@ -1142,20 +1134,20 @@ sim_proper(mars_t* mars, const field_t * const war_pos_tab, u32_t* death_tab )
 
         case _OP(EX_MUL, EX_mI):
         case _OP(EX_MUL, EX_mF):
-            ptb->b = (rb_b * ra_b) % coresize;
+            ptb->b = ((unsigned int)rb_b * (unsigned int)ra_b) % coresize;
         case _OP(EX_MUL, EX_mA):
-            ptb->a = (rb_a * ra_a) % coresize;
+            ptb->a = ((unsigned int)rb_a * (unsigned int)ra_a) % coresize;
             break;
         case _OP(EX_MUL, EX_mB):
-            ptb->b = (rb_b * ra_b) % coresize;
+            ptb->b = ((unsigned int)rb_b * (unsigned int)ra_b) % coresize;
             break;
         case _OP(EX_MUL, EX_mX):
-            ptb->a = (rb_a * ra_b) % coresize;
+            ptb->a = ((unsigned int)rb_a * (unsigned int)ra_b) % coresize;
         case _OP(EX_MUL, EX_mAB):
-            ptb->b = (rb_b * ra_a) % coresize;
+            ptb->b = ((unsigned int)rb_b * (unsigned int)ra_a) % coresize;
             break;
         case _OP(EX_MUL, EX_mBA):
-            ptb->a = (rb_a * ra_b) % coresize;
+            ptb->a = ((unsigned int)rb_a * (unsigned int)ra_b) % coresize;
             break;
 
 

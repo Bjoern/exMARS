@@ -217,11 +217,6 @@ int posit(s32_t *seed, mars_t* mars);
 mars_t* init(int argc, char** argv);
 void pmars2exhaust(mars_t* mars, warrior_struct** warriors, int wCount);
 
-char* eval(mars_t* mars, int prevPrec, long val1, int oper1, char *expr, long *result);
-char   *getreg(mars_t* mars, char *expr, int regId, long *val);
-char   *getval(mars_t* mars, char *expr, long *val);
-char   *getop(char *expr, char *op);
-long    calc(mars_t* mars, long x, long y, int op);
 
 
 /* *************************** external strings ************************** */
@@ -380,26 +375,10 @@ char   *permutateMultiWarrior = "\nPermutation cannot be used in multiwarrior ba
 
 #define BIGNUM 20                /* largest number taken */
 
-/* two-char operators */
+/* two-char operators, distinct from single-character operators */
 enum {
-    EQUAL, NEQU, GTE, LTE, AND, OR, IDENT
+    EQUAL = 256, NEQU, GTE, LTE, AND, OR
 };
-
-#define TERMINAL(c) (((c)==')' || !(c)) ? 1 : 0)
-/* order of precedence (high to low):
- * / %
- + -
- > < == != >= <=
- &&
- ||
- =
-*/
-#define PRECEDENCE(op) (op=='*' || op=='/' || op=='%' ? 5 :             \
-                        (op=='+' || op=='-' ? 4 :                       \
-                         (op=='>' || op=='<' || op==EQUAL || op==NEQU   \
-                          || op==GTE || op==LTE ? 3 :                   \
-                          (op==AND ? 2 : (op==OR ? 1 : 0)))))
-#define SKIP_SPACE(e) while(isspace(*(e))) ++(e)
 
 
 /* converts pmars order to exhaust order */
@@ -435,213 +414,169 @@ enum ex_addr_mode p2eAddr[] = {
     
 
 /*--------------------*/
-long calc(mars_t* mars, long x, long y, int op)
-{
-    long    z;
+/* Bounded expression evaluator, ported from pMARS 0.9.6 (eval.c). The
+ * inherited 0.9.2 evaluator mis-associated chains such as a-(b)/2-c/2,
+ * assembling different code than pMARS. Preserves pMARS precedence,
+ * registers and eager logical evaluation; rejects malformed or overflowing
+ * arithmetic. */
+#define EVAL_MAX_DEPTH 128
+#define EVAL_MAX_STEPS 100000UL
 
+typedef struct {
+    mars_t *mars;
+    const char *cur;
+    unsigned int depth;
+    unsigned long steps;
+    int error;
+} expr_parser;
+
+static long expression(expr_parser *, int);
+
+static void spaces(expr_parser *p)
+{
+    while (isspace((unsigned char)*p->cur)) ++p->cur;
+}
+
+static int enter(expr_parser *p)
+{
+    if (p->error || p->depth >= EVAL_MAX_DEPTH || ++p->steps > EVAL_MAX_STEPS) {
+        if (!p->error) p->error = BAD_EXPR;
+        return 0;
+    }
+    ++p->depth;
+    return 1;
+}
+
+static long number(expr_parser *p, int negative)
+{
+    unsigned long value = 0;
+    unsigned long limit = (unsigned long)LONG_MAX + (negative ? 1UL : 0UL);
+    while (isdigit((unsigned char)*p->cur)) {
+        unsigned int digit = (unsigned int)(*p->cur++ - '0');
+        if (value > (limit - digit) / 10UL) {
+            p->error = BAD_EXPR;
+            return 0;
+        }
+        value = value * 10UL + digit;
+    }
+    if (negative && value == (unsigned long)LONG_MAX + 1UL) return LONG_MIN;
+    return negative ? -(long)value : (long)value;
+}
+
+static long primary(expr_parser *p)
+{
+    long value = 0;
+    int ch, reg;
+    if (!enter(p)) return 0;
+    spaces(p);
+    ch = (unsigned char)*p->cur;
+    if (ch == '(') {
+        ++p->cur;
+        value = expression(p, 0);
+        spaces(p);
+        if (*p->cur == ')') ++p->cur;
+        else p->error = BAD_EXPR;
+    } else if (ch == '+' || ch == '-' || ch == '!') {
+        ++p->cur;
+        spaces(p);
+        if (ch == '-' && isdigit((unsigned char)*p->cur))
+            value = number(p, 1);
+        else {
+            value = primary(p);
+            if (ch == '-') {
+                if (value == LONG_MIN) p->error = BAD_EXPR;
+                else value = -value;
+            } else if (ch == '!') value = !value;
+        }
+    } else if (isdigit(ch)) {
+        value = number(p, 0);
+    } else if ((reg = toupper(ch)) >= 'A' && reg <= 'Z') {
+        ++p->cur;
+        spaces(p);
+        if (*p->cur == '=' && p->cur[1] != '=') {
+            ++p->cur;
+            value = expression(p, 0);
+            if (!p->error) p->mars->regAr[reg - 'A'] = value;
+        } else value = p->mars->regAr[reg - 'A'];
+    } else {
+        p->error = BAD_EXPR;
+    }
+    --p->depth;
+    return value;
+}
+
+static int read_operator(expr_parser *p, int *width, int *precedence)
+{
+    int ch = (unsigned char)*p->cur;
+    *width = 1;
+    *precedence = 3;
+    switch (ch) {
+    case '*': case '/': case '%': *precedence = 5; return ch;
+    case '+': case '-': *precedence = 4; return ch;
+    case '<': case '>':
+        if (p->cur[1] == '=') { *width = 2; return ch == '<' ? LTE : GTE; }
+        return ch;
+    case '=': case '!':
+        if (p->cur[1] == '=') { *width = 2; return ch == '=' ? EQUAL : NEQU; }
+        return 0;
+    case '&': case '|':
+        if (p->cur[1] == ch) {
+            *width = 2; *precedence = ch == '&' ? 2 : 1;
+            return ch == '&' ? AND : OR;
+        }
+        return 0;
+    default: return 0;
+    }
+}
+
+static long arithmetic(expr_parser *p, long x, long y, int op)
+{
     switch (op) {
     case '+':
-        if (mars->evalerr == OK_EXPR && (x > 0 ?
-                                         y > 0 && x > LONG_MAX - y :
-                                         y < 0 && x < LONG_MIN - y ))
-            mars->evalerr = PMARS_OVERFLOW;
-        z = x + y;
-        break;
+        if ((y > 0 && x > LONG_MAX - y) || (y < 0 && x < LONG_MIN - y)) break;
+        return x + y;
     case '-':
-        if (mars->evalerr == OK_EXPR && (x > 0 ?
-                                         y < 0 && x > LONG_MAX + y :
-                                         y > 0 && x < LONG_MIN + y ))
-            mars->evalerr = PMARS_OVERFLOW;
-        z = x - y;
-        break;
-    case '/':
-        if (y == 0) {
-            mars->evalerr = DIV_ZERO;
-            z = 0;
-        } else
-            z = x / y;
-        break;
+        if ((y < 0 && x > LONG_MAX + y) || (y > 0 && x < LONG_MIN + y)) break;
+        return x - y;
     case '*':
-        if (mars->evalerr == OK_EXPR && x != 0 && y != 0 &&
-            x != -1 && y != -1 &&    /* LONG_MIN/(-1) causes FP error! */
-            ((x > 0) == (y > 0) ?
-             LONG_MAX / y / x == 0 :
-             LONG_MIN / y / x == 0 ))
-            mars->evalerr = PMARS_OVERFLOW;
-        z = x * y;
-        break;
-    case '%':
-        if (y == 0) {
-            mars->evalerr = DIV_ZERO;
-            z = 0;
-        } else
-            z = x % y;
-        break;
-    case AND:
-        z = x && y;
-        break;
-    case OR:
-        z = x || y;
-        break;
-    case EQUAL:
-        z = x == y;
-        break;
-    case NEQU:
-        z = x != y;
-        break;
-    case '<':
-        z = x < y;
-        break;
-    case '>':
-        z = x > y;
-        break;
-    case LTE:
-        z = x <= y;
-        break;
-    case GTE:
-        z = x >= y;
-        break;
-    case IDENT:                        /* the right-identity operator, used for
-                                        * initial call to eval() */
-        z = y;
-        break;
-    default:
-        z = 0;
-        mars->evalerr = BAD_EXPR;
+        if (x > 0 ? (y > 0 ? x > LONG_MAX / y : y < LONG_MIN / x) :
+            (x < 0 && (y > 0 ? x < LONG_MIN / y : y < 0 && x < LONG_MAX / y))) break;
+        return x * y;
+    case '/': case '%':
+        if (!y) { p->error = DIV_ZERO; return 0; }
+        if (x == LONG_MIN && y == -1) break;
+        return op == '/' ? x / y : x % y;
+    case AND: return x && y;
+    case OR: return x || y;
+    case EQUAL: return x == y;
+    case NEQU: return x != y;
+    case '<': return x < y;
+    case '>': return x > y;
+    case LTE: return x <= y;
+    case GTE: return x >= y;
     }
-    return z;
+    p->error = BAD_EXPR;
+    return 0;
 }
 
-/*--------------------*/
-char   *
-getop(expr, oper)
-    char   *expr;
-    char   *oper;
+static long expression(expr_parser *p, int minimum)
 {
-    char    ch;
-    switch (ch = *(expr++)) {
-    case '&':
-        if (*(expr++) == '&')
-            *oper = AND;
-        break;
-    case '|':
-        if (*(expr++) == '|')
-            *oper = OR;
-        break;
-    case '=':
-        if (*(expr++) == '=')
-            *oper = EQUAL;
-        break;
-    case '!':
-        if (*(expr++) == '=')
-            *oper = NEQU;
-        break;
-    case '<':
-        if (*expr == '=') {
-            ++expr;
-            *oper = LTE;
-        } else
-            *oper = '<';
-        break;
-    case '>':
-        if (*expr == '=') {
-            ++expr;
-            *oper = GTE;
-        } else
-            *oper = '>';
-        break;
-    default:
-        *oper = ch;
-        break;
+    long left;
+    int op, width, precedence;
+    if (!enter(p)) return 0;
+    left = primary(p);
+    while (!p->error) {
+        long right;
+        spaces(p);
+        op = read_operator(p, &width, &precedence);
+        if (!op || precedence < minimum) break;
+        if (++p->steps > EVAL_MAX_STEPS) { p->error = BAD_EXPR; break; }
+        p->cur += width;
+        right = expression(p, precedence + 1);
+        if (!p->error) left = arithmetic(p, left, right, op);
     }
-    return expr;
-}
-/*--------------------*/
-char   *
-getreg(mars_t* mars, char* expr, int regId, long* val)
-{
-    SKIP_SPACE(expr);
-    if (*expr == '=' && *(expr + 1) != '=') {        /* assignment, not equality */
-        expr = eval(mars, -1, 0L, IDENT, expr + 1, val);
-        mars->regAr[regId] = *val;
-    } else
-        *val = mars->regAr[regId];
-    return expr;
-}
-
-/*--------------------*/
-char   *
-getval(mars_t* mars, char* expr, long* val)
-{
-    char    buffer[BIGNUM];
-    int     regId;
-    int     bufptr = 0;
-    long    accum;
-
-    SKIP_SPACE(expr);
-    if (*expr == '(') {                /* parenthetical expression */
-        expr = eval(mars, -1, 0L, IDENT, expr + 1, val);
-        if (*expr != ')')
-            mars->evalerr = BAD_EXPR;
-        return expr + 1;
-    }
-    if (*expr == '-') {                /* unary minus */
-        expr = getval(mars, expr + 1, &accum);
-        *val = accum * -1;
-        return expr;
-    } else if (*expr == '!') {        /* logical NOT */
-        expr = getval(mars, expr + 1, &accum);
-        *val = (accum ? 0 : 1);
-        return expr;
-    } else if (*expr == '+')        /* unary plus */
-        return getval(mars, expr + 1, val);
-    else if (((regId = (int) toupper(*expr)) >= 'A') && (regId <= 'Z'))
-        return getreg(mars, expr + 1, regId - 'A', val);
-    else
-        while (isdigit(*expr))
-            buffer[bufptr++] = *expr++;
-    if (bufptr == 0)
-        mars->evalerr = BAD_EXPR;                /* no digits */
-    buffer[bufptr] = 0;
-    sscanf(buffer, "%ld", val);
-    return expr;
-}
-
-/*--------------------*/
-char* 
-eval(mars_t* mars, int prevPrec, long val1, int oper1, char *expr, long *result) {
-    long    result2, val2;
-    char    oper2;
-    int     prec1, prec2;
-
-
-    expr = getval(mars, expr, &val2);
-    SKIP_SPACE(expr);
-    if (TERMINAL(*expr)) {        /* trivial: expr is number or () */
-        *result = calc(mars, val1, val2, oper1);
-        return expr;
-    }
-    expr = getop(expr, &oper2);
-    mars->saveOper = 0;
-
-    if ((prec1 = PRECEDENCE(oper1)) >= (prec2 = PRECEDENCE(oper2))) {
-        if (prec2 >= prevPrec || prec1 <= prevPrec) {
-            expr = eval(mars, prec1, calc(mars, val1, val2, oper1), oper2, expr, result);
-        } else {
-            *result = calc(mars, val1, val2, oper1);
-            mars->saveOper = oper2;
-        }
-    } else {
-        expr = eval(mars, prec1, val2, oper2, expr, &result2);
-        *result = calc(mars, val1, result2, oper1);
-
-        if (mars->saveOper && PRECEDENCE(mars->saveOper) >= prevPrec) {
-            expr = eval(mars, prec2, *result, mars->saveOper, expr, result);
-            mars->saveOper = 0;
-        }
-    }
-
-    return expr;
+    --p->depth;
+    return left;
 }
 
 /*--------------------*/
@@ -656,12 +591,22 @@ reset_regs(mars_t* mars)
 
 /*--------------------*/
 int
-eval_expr(mars_t* mars, char* expr, long* result)                /* wrapper for eval() */
+eval_expr(mars_t* mars, char* expr, long* result)
 {
-    mars->evalerr = OK_EXPR;
-    if (*eval(mars, -1, 0L, IDENT, expr, result) != 0)
-        mars->evalerr = BAD_EXPR;                /* still chars left */
-    return (mars->evalerr);
+    expr_parser p;
+    long saved[26];
+    int i;
+    p.mars = mars; p.cur = expr; p.depth = 0; p.steps = 0; p.error = OK_EXPR;
+    for (i = 0; i < 26; ++i) saved[i] = mars->regAr[i];
+    *result = expression(&p, 0);
+    spaces(&p);
+    if (!p.error && *p.cur) p.error = BAD_EXPR;
+    if (p.error) {
+        *result = 0;
+        for (i = 0; i < 26; ++i) mars->regAr[i] = saved[i];
+    }
+    mars->evalerr = p.error;
+    return p.error;
 }
 
 
@@ -2537,6 +2482,10 @@ s32_t rng(s32_t seed)
 {
     /* return FIX2INT(rb_eval_string("rand(2147483647)")); */
     register s32_t temp = seed;
+    /* As pMARS pos.c: 0 is a fixed point of this generator, so -F equal to
+     * the minimum separation would otherwise repeat one placement forever. */
+    temp = (s32_t)((u32_t)temp & 0x7fffffffu);
+    if (!temp) temp = 1;
     temp = 16807 * (temp % 127773) - 2836 * (temp / 127773);
     if (temp < 0)
         temp += 2147483647;
@@ -2828,6 +2777,7 @@ void readargs(int argc, char** argv, mars_t* mars) {
                     switch (c) {
 
                     case 'k': break;
+                    case 'X': break; /* Exact execution is the only mode here. */
                     case 'b': break;
                     case 'm': mars->isMultiWarriorOutput = 1; break;
 
@@ -2953,7 +2903,9 @@ void pmars2exhaust(mars_t* mars, warrior_struct** warriors, int wCount)
         insn_t* in = NULL;
         warrior->start = w->offset;
         warrior->len = w->instLen;
-        warrior->have_pin = 0; /* TODO! */
+        /* Warriors declaring the same PIN share P-space (except cell 0). */
+        warrior->have_pin = w->pSpaceIndex == PIN_APPEARED;
+        warrior->pin = w->pSpaceIDNumber;
         in = warrior->code;
         
         for (i=0; i < w->instLen; ++i) {
