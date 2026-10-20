@@ -22,6 +22,10 @@ and its raw data for new cross-engine measurements and their workload/semantic l
 
 The original README's historical Pentium-era claims remain historical.
 
+An isolated [packed-cell experiment](benchmarks/cell_layout/README.md) compares
+64-bit and tiny-core 32-bit cells with this optimized engine on Apple M1.
+The measured tradeoffs did not justify changing the default cell layout.
+
 ## Stage boundary
 
 The safe process-count shortcut, default early mode and CLI `-X`/`-E` are
