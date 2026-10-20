@@ -141,7 +141,7 @@ int sim_alloc_bufs(mars_t* mars) {
 
     mars->positions = (field_t*)malloc(sizeof(field_t)*mars->nWarriors);
     mars->startPositions = (field_t*)malloc(sizeof(field_t)*mars->nWarriors);
-    mars->deaths = (u32_t*)malloc(sizeof(unsigned int)*mars->nWarriors);
+    mars->deaths = (u32_t*)malloc(sizeof(*mars->deaths)*mars->nWarriors);
     mars->results = (u32_t*)malloc(sizeof(u32_t)*mars->nWarriors*(mars->nWarriors+1));
 
     mars->pspaceSize = mars->coresize/16;
