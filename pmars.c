@@ -17,8 +17,7 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
-#define VERSION 1
-#define REVISION 0
+#define EXMARS_VERSION "0.01-ai.1"
 
 #include <stdio.h>
 #include <ctype.h>
@@ -2521,8 +2520,9 @@ void panic(const char *msg)
 
 void usage(void)
 {
-    printf("exmasr v%d.%d\n", VERSION, REVISION );
-    printf("usage: exhaust [opts] warriors...\n");
+    printf("exMARS %s — AI-assisted fork of exMARS 0.01\n", EXMARS_VERSION);
+    printf("usage: exmars [opts] warriors...\n");
+    printf("      exmars --version\n");
     printf("opts: -r <rounds>, -c <cycles>, -F <pos>, -s <coresize>,\n"
            "      -p <maxprocs>, -l <maxlen>, -d <minsep>, -bk, -X\n"
            "      -X: disable default safe early ties; preserve final core/queues\n      -E: enable safe early ties (default; compatibility option)\n");
@@ -2989,6 +2989,11 @@ int main(int argc, char** argv) {
     u32_t i, seed;
     warriorNames_t* currWarrior;
     warrior_struct** warriors;
+
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        printf("exMARS %s — AI-assisted fork of exMARS 0.01\n", EXMARS_VERSION);
+        return 0;
+    }
 
     /* setup mars */
     mars_t* mars = init(argc, argv);
