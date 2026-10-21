@@ -1,0 +1,133 @@
+name: Build binaries
+
+on:
+  push:
+    branches: [main]
+    tags: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unix:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-22.04
+            cc: gcc
+          - platform: linux-arm64
+            runner: ubuntu-22.04-arm
+            cc: gcc
+          - platform: macos-x86_64
+            runner: macos-15-intel
+            cc: clang
+          - platform: macos-arm64
+            runner: macos-15
+            cc: clang
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build
+        run: make -j2 CC=${{ matrix.cc }}
+      - name: Test CLI and engine
+        run: |
+          python3 tests/pmars_compat/run.py ./exmars
+          python3 tests/engine/check_early.py
+      - name: Package
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p dist
+          tar -czf "dist/exmars-${PLATFORM}.tar.gz" exmars README.md README-correctness.md
+      - uses: actions/upload-artifact@v6
+        with:
+          name: exmars-${{ matrix.platform }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish tagged release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: [unix, windows]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: exmars-*
+          merge-multiple: true
+          path: dist
+      - name: Publish archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          assets=(
+            dist/exmars-linux-x86_64.tar.gz
+            dist/exmars-linux-arm64.tar.gz
+            dist/exmars-macos-x86_64.tar.gz
+            dist/exmars-macos-arm64.tar.gz
+            dist/exmars-windows-x86_64.zip
+          )
+          for asset in "${assets[@]}"; do
+            test -s "$asset"
+          done
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" --verify-tag --generate-notes --title "$TAG"
+          fi
+
+  windows:
+    name: Build windows-x86_64
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-python
+      - name: Build
+        shell: msys2 {0}
+        # Link GCC runtime libraries statically so users do not need MSYS2.
+        run: make -j2 TARGET=exmars.exe CFLAGS='-std=gnu17 -O3 -fomit-frame-pointer -static'
+      - name: Test CLI and engine
+        shell: msys2 {0}
+        run: |
+          python tests/pmars_compat/run.py ./exmars.exe
+          python tests/engine/check_early.py
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist
+          Compress-Archive -Path exmars.exe, README.md, README-correctness.md -DestinationPath dist/exmars-windows-x86_64.zip
+      - uses: actions/upload-artifact@v6
+        with:
+          name: exmars-windows-x86_64
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
