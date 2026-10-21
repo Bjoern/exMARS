@@ -19,8 +19,8 @@ The resulting programm has the following main features:
 ## Automated builds
 
 The [Build binaries workflow](https://github.com/Bjoern/exMARS/actions/workflows/build.yml)
-builds and tests the standalone command-line simulator on every push to `main`
-(including merged pull requests), on pull requests targeting `main`, on any tag
+builds and tests the standalone command-line simulator on every push to `main` or
+`master` (including merged pull requests), on pull requests targeting either branch, on any tag
 push, and on manual workflow runs.
 
 Downloads are available under **Artifacts** on each successful workflow run:
