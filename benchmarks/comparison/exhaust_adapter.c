@@ -27,7 +27,8 @@ int main(int argc,char **argv) {
 #ifdef EXMARS
         u32_t deaths[2];
         sim_clear_core(m);sim_load_warrior(m,0,code[i],input[i].len);sim_load_warrior(m,pos,code[j],input[j].len);
-        int alive=sim_mw(m,starts,deaths);death[0]=(unsigned)deaths[0];
+        int alive=sim_mw(m,starts,deaths);
+        if(alive==1)death[0]=(unsigned)deaths[0];
 #else
         sim_clear_core();sim_load_warrior(0,code[i],input[i].len);sim_load_warrior(pos,code[j],input[j].len);
         int alive=sim_mw(2,starts,death);

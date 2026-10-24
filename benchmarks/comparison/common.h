@@ -3,7 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <time.h>
+#endif
 typedef struct { unsigned op, mod, am, a, bm, b; } bench_cell;
 typedef struct { unsigned len, start; bench_cell cells[100]; } bench_war;
 static bench_war input[64];
@@ -28,7 +32,15 @@ static void read_input(int argc, char **argv) {
     }
     fclose(f);
 }
-static double now(void) { LARGE_INTEGER t,f;QueryPerformanceFrequency(&f);QueryPerformanceCounter(&t);return (double)t.QuadPart/f.QuadPart; }
+static double now(void) {
+#ifdef _WIN32
+    LARGE_INTEGER t,f;QueryPerformanceFrequency(&f);QueryPerformanceCounter(&t);return (double)t.QuadPart/f.QuadPart;
+#else
+    struct timespec t;
+    if(clock_gettime(CLOCK_MONOTONIC, &t)) { perror("clock_gettime"); exit(10); }
+    return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
+#endif
+}
 static void output(double elapsed,unsigned pairs) {
     printf("{\"seconds\":%.9f,\"rounds\":%u,\"scores\":[",elapsed,pairs*br);
     for(unsigned i=0;i<pairs;i++)printf("%s[%lu,%lu,%lu]",i?",":"",scores[i][0],scores[i][1],scores[i][2]);

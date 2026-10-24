@@ -1,0 +1,34 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>exMARS WASM smoke test</title>
+<pre id="result">Running Worker checks…</pre>
+<script type="module">
+const worker = new Worker('./worker.mjs', {type:'module'});
+let serial = 0;
+const pending = new Map();
+worker.onmessage = ({data}) => {
+  if (data.progress) return;
+  const p = pending.get(data.id); if (!p) return;
+  pending.delete(data.id);
+  data.error ? p.reject(new Error(data.error)) : p.resolve(data.result);
+};
+worker.onerror = e => { for (const p of pending.values()) p.reject(new Error(e.message)); pending.clear(); };
+const request = data => new Promise((resolve,reject) => {
+  const id=++serial; pending.set(id,{resolve,reject}); worker.postMessage({id,...data});
+});
+try {
+  const warriors = [';assert 1\njmp 0\nend\n',';assert 1\ndat 0,0\nend\n'];
+  const lines=[];
+  for (const engine of ['exmars','reference-exmars','pmars']) {
+    const r=await request({method:'match',warriors,options:{engine,rounds:4,cycles:100}});
+    if(r.wins!==4 || r.ties!==0 || r.losses!==0) throw new Error(engine+' scores differ');
+    lines.push(engine+': 4 wins, 0 ties, 0 losses');
+  }
+  const input='80 800 80 5 2\n1 0\n11 2 0 0 0 0\n1 0\n0 0 0 0 0 0\n';
+  const b=await request({method:'benchmark',input,options:{passes:1}});
+  if(!b.allScoresMatch) throw new Error('Benchmark disagreement');
+  lines.push('All four benchmark modules agree.');
+  document.querySelector('#result').textContent='PASS\n'+lines.join('\n');
+} catch(e) { document.querySelector('#result').textContent='FAIL\n'+e.stack; }
+finally { worker.terminate(); }
+</script>

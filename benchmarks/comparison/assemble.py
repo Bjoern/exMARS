@@ -24,7 +24,8 @@ for suite,core,cycles,procs,sep,length in [('94top50',8000,80000,8000,100,100),(
    if data[0] in (16,17):raise ValueError('P-space excluded from no-P-space comparison')
    lines.append(' '.join(map(str,data)))
   inputs[name]=digest
- p=out/(suite+'.txt');p.write_text('\n'.join(lines)+'\n')
+ # Preserve the recorded Windows serialization on every host.
+ p=out/(suite+'.txt');p.write_bytes(('\r\n'.join(lines)+'\r\n').encode('ascii'))
  if hashlib.sha256(p.read_bytes()).hexdigest()!=manifest[suite]['assembled_sha256']:
   raise ValueError('Assembled input differs from the measured Windows input: '+suite)
  print('Verified',suite,len(names),'warriors')

@@ -132,3 +132,9 @@ git push origin v0.01-ai.1
 The tagged commit must contain the workflow. Re-running a tag's workflow updates
 the archive attachments on its existing release. Branch and pull-request builds
 only upload temporary workflow artifacts.
+
+## WebAssembly
+
+Browser/Worker and Node modules, tournament API, and comparisons against pMARS
+and original exMARS are documented in [wasm/README.md](wasm/README.md).
+Build with `make wasm PMARS_SOURCE=../pmars_experiments/src` after activating Emscripten.

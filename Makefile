@@ -65,3 +65,14 @@ specialized:
 	$(PYTHON) build_fast.py --cc "$(CC)" --flags "$(CPPFLAGS) $(CFLAGS)" --fixed-coresize $(CORESIZE) --fixed-processes $(MAXPROCESSES) --fixed-cycles $(CYCLES) --max-length $(MAXLENGTH) --min-distance $(MINSEP) --output-dir "$(SPECIALIZED_DIR)" $(SPECIALIZED_EXTENSION)
 
 .PHONY: specialized
+
+# Browser/Worker/Node modules. Optional pMARS source enables comparison builds.
+EMCC ?= emcc
+PMARS_SOURCE ?=
+wasm:
+	python3 wasm/build.py --emcc "$(EMCC)" $(if $(PMARS_SOURCE),--pmars-source "$(PMARS_SOURCE)")
+
+wasm-test:
+	node wasm/test.mjs dist/wasm
+
+.PHONY: wasm wasm-test
