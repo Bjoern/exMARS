@@ -113,6 +113,8 @@ const f = await createFighter(hill);   // one per Web Worker, kept for the whole
 const h = f.load(w);                     // handle; throws on invalid input
 f.fight(h, h2, {rounds: 250, position: 1234});  // -> {wins, ties, losses} of h
 f.exact(h, h2);                          // -> {wins, ties, losses, rounds}
+f.fightMany([h, h2, h3], {rounds: 200, position: 1234});
+// -> {results: [[dead, alive1, ..., aliveN], ...]} per warrior, in input order
 f.unload(h);
 f.configure(otherHill);                  // drops all handles
 f.setEarlyExit(false);                   // optional; safe early ties are on by default
@@ -134,6 +136,24 @@ f.dispose();
   and one with `h2` starting (`h2` at 0, `h` at `coreSize−p`), each a fresh
   match; `rounds = 2·(coreSize−2·minDistance+1)` (142 on nano). Totals equal
   pMARS's permutation mode (`-P -r rounds`) for warriors without P-space.
+- `fightMany(handles, {rounds, position})`: one match of 2 to 36 warriors
+  (pMARS's limit; handles may repeat), as pMARS runs a multi-warrior battle:
+  placements by pMARS's `posit`, falling back to `npos`, seeded from `position`
+  like `-F` (0 = random); starting order rotated by one warrior each round;
+  P-space fresh per match and shared between any warriors with equal PINs;
+  P-space location 0 holds the number of survivors (0 if dead) for the next
+  round. It returns each warrior's survivor histogram: `results[i][0]` is the
+  number of rounds warrior `i` ended dead, `results[i][k]` the rounds it ended
+  alive with `k` survivors (`k = 1..n`). Each row sums to `rounds`. This is
+  pMARS's `-k` output reordered (pMARS prints the score, alive counts for
+  1..n survivors, then deaths). Requires `n·minDistance ≤ coreSize`. For n > 2
+  a non-zero `position` may be any of `minDistance..2^30`, as pMARS accepts; for
+  n = 2 the `fight` range applies, and a 2-warrior `fightMany` equals `fight`.
+  Scores are left to the caller. pMARS computes a warrior's score as the sum
+  over `S = 1..n` of `results[i][S] · formula(W = n, S)`, where its own integer
+  evaluator handles the formula (default `(W*W-1)/S`): `+ - * / %` with C
+  truncation, comparisons and `&& ||` giving 0/1, unary `+ - !`, and registers
+  `W` and `S` (other letters are 0). Deaths score nothing.
 - `assemble(source, hill, {rounds})` runs the pMARS parser in a fresh,
   throwaway assembler instance, because the parser can `exit()` (more than
   `ERRMAX` = 9 errors, out of memory). `CORESIZE`, `MAXLENGTH`, `PSPACESIZE`
@@ -164,15 +184,19 @@ produced them (0..coreSize−1).
 The fighter takes only the five settings above, so these can't be set by
 accident; use pMARS for hills that need them: no ICWS '88 mode, no free
 permutation toggle (`exact` covers exhaustive scoring), P-space size fixed at
-`coreSize/16`, 3/1/0 scoring only (the API returns counts), exactly two
-warriors.
+`coreSize/16` (pMARS's default is `coreSize/d` for the largest divisor `d ≤ 16`
+of `coreSize`, so the two agree only when 16 divides `coreSize`), at most 36
+warriors, and non-numeric `-F` seeds (pMARS's RC5 generator) are not
+supported. The API returns counts; scoring formulas are the caller's.
 
 ### C API
 
 `fighter.mjs` exports `_ex_configure(coreSize, cycles, processes, maxLength,
 minDistance)`, `_ex_load(int32 *insns, count, start, hasPin, pin)` → handle,
 `_ex_unload(handle)`, `_ex_fight(a, b, rounds, fixedPosition, int32 out[3])`,
-`_ex_fight_exact(a, b, int32 out[3])`, `_ex_set_early_exit(on)` and
+`_ex_fight_exact(a, b, int32 out[3])`, `_ex_fight_many(int32 *handles, n,
+rounds, fixedPosition, int32 out[n·(n+1)])` (row `i` is `out[i·(n+1) ..]`,
+dead first), `_ex_set_early_exit(on)` and
 `_ex_error()`, plus `_malloc`/`_free` and `HEAPU8`/`HEAP32`/`UTF8ToString`.
 Status < 0 means an error; nothing on this path calls `exit()`. The handle
 table grows as needed. `assembler.mjs` exports `_ex_assemble(source, coreSize,
@@ -189,9 +213,12 @@ with `EXMARS_CORPUS`) and the native Python binding, which it builds into
 `EXMARS_FIGHTER_STRICT=1` turns them into failures. It checks `fight` against
 `runMatch` on exMARS and pMARS for random pairs, seeds and round counts in both
 orders; `exact` against single rounds and pMARS `-P`; 1000 mixed calls on one
-instance against fresh instances, including P-space/PIN warriors, failed
-loads, unload and reconfiguration; and `assemble` against the Python binding on
-all 336 corpus sources.
+instance against fresh instances, including melee, P-space/PIN warriors,
+failed loads, unload and reconfiguration; `fightMany` histograms against the
+pMARS and exMARS CLIs with 3, 4, 6 and 10 warriors on nano, tiny, standard and
+lp, scores under three formulas, early exit on and off, warriors that exactly
+fill the core (16 on nano, 36 on a 360-cell core) and P-space/PIN melee; and
+`assemble` against the Python binding on all 336 corpus sources.
 
 Throughput, 2026-11-04, Linux x86_64 cloud VM, Node 22.23 (headless Chromium
 gave the same nano and standard numbers). The `runMatch` columns are this
@@ -203,6 +230,7 @@ machine; the handoff's M1 figures were 1.7–1.8 ms per 1-round nano match and
 | Nano exact, 1 candidate vs 50 `nanobm07` opponents (7100 rounds) | 21–25 ms | ≈ 8–10 ms per 1-round match, ≈ 60 s with a runtime per round |
 | Standard, 1 candidate vs 20 `94top50` opponents, 250 rounds | 2.9–3.5 s (≈ 150 ms per match) | 160–220 ms per 250-round match |
 | `assemble` | ≈ 3 ms per source | |
+| Melee, 10 `94top50` warriors, 200 rounds | 0.6–0.7 s | exMARS CLI 0.6 s, pMARS CLI 2.1 s (`runCLI`) |
 
 ## Fair simulator benchmarks
 

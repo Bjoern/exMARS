@@ -54,7 +54,7 @@ def build_api(name, sources, exports, exit_runtime, defines=()):
 h = ROOT / 'benchmarks/comparison'
 # Persistent fighter: sim.c + pspace.c only, so the pMARS parser's exit paths are absent.
 build_api('fighter', [ROOT / 'wasm/fighter.c', ROOT / 'sim.c', ROOT / 'pspace.c'],
-          ['ex_configure', 'ex_load', 'ex_unload', 'ex_fight', 'ex_fight_exact', 'ex_set_early_exit', 'ex_error'], 0)
+          ['ex_configure', 'ex_load', 'ex_unload', 'ex_fight', 'ex_fight_exact', 'ex_fight_many', 'ex_set_early_exit', 'ex_error'], 0)
 # Assembler: run in a fresh instance per call, since the parser can exit().
 build_api('assembler', [ROOT / 'wasm/assembler.c', ROOT / 'pmars.c', ROOT / 'sim.c', ROOT / 'pspace.c'],
           ['ex_assemble', 'ex_result', 'ex_name', 'ex_author', 'ex_message'], 1, ['-Dmain=exmars_cli_main'])

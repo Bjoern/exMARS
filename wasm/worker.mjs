@@ -19,7 +19,7 @@ async function fighterJob({warriors, hill, rounds = 2, position = 0}) {
   const [a, b] = assembled.map(w => fighter.load(w));
   try {
     return {fight: fighter.fight(a, b, {rounds, position}), exact: fighter.exact(a, b),
-      names: assembled.map(w => w.name)};
+      melee: fighter.fightMany([a, b, b], {rounds, position}), names: assembled.map(w => w.name)};
   } finally { fighter.unload(a); fighter.unload(b); }
 }
 self.onmessage = async ({data: {id, method = 'match', warriors, options, input}}) => {

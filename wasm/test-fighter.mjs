@@ -164,14 +164,18 @@ const standardHill = HILLS.standard.hill;
     const nano = nanoW.length && i < 500;
     const ws = nano ? nanoW : stdW, hill = nano ? HILLS.nano.hill : standardHill;
     const a = rand(ws.length), b = rand(ws.length);
-    if (nano && rand(10) < 3) plan.push({nano, a, b, exact: true});
+    const roll = rand(20);
+    if (roll < 3) {   // melee: 3..6 warriors (repeats allowed), mixed into the same instance
+      const list = Array.from({length: 3 + rand(4)}, () => rand(ws.length));
+      plan.push({nano, a, b, many: list, rounds: 1 + rand(nano ? 12 : 3), position: rand(4) ? hill.minDistance + rand(4 * hill.coreSize) : null});
+    } else if (nano && roll < 9) plan.push({nano, a, b, exact: true});
     else plan.push({nano, a, b, rounds: 1 + rand(nano ? 12 : 5), position: rand(4) ? legal(hill) : null});
   }
   // Random placements (position 0) differ per instance, so compare those by round count only.
   const f = await createFighter(nanoW.length ? HILLS.nano.hill : standardHill);
   let handles = (nanoW.length ? nanoW : stdW).map(w => f.load(w.asm));
   let phase = nanoW.length ? 'nano' : 'standard';
-  let compared = 0;
+  let compared = 0, manyCompared = 0;
   for (const [i, step] of plan.entries()) {
     if (!step.nano && phase === 'nano') {
       f.configure(standardHill);
@@ -192,6 +196,18 @@ const standardHill = HILLS.standard.hill;
       assert.throws(() => f.fight(old, old, {rounds: 1}), /Unknown warrior handle/);
       handles[k] = f.load(ws[k].asm);
     }
+    if (step.many) {
+      const got = f.fightMany(step.many.map(k => handles[k]), {rounds: step.rounds, position: step.position ?? 0});
+      assert.ok(got.results.every(r => r.reduce((x, y) => x + y) === step.rounds));
+      if (step.position === null) continue;
+      const fresh = await createFighter(hill);
+      const fh = ws.map(w => fresh.load(w.asm));
+      const want = fresh.fightMany(step.many.map(k => fh[k]), {rounds: step.rounds, position: step.position});
+      fresh.dispose();
+      assert.deepEqual(got, want, `reuse step ${i} ${JSON.stringify(step)}`);
+      compared++; manyCompared++;
+      continue;
+    }
     const got = step.exact ? f.exact(handles[step.a], handles[step.b])
       : f.fight(handles[step.a], handles[step.b], {rounds: step.rounds, position: step.position ?? 0});
     if (step.position === null && !step.exact) { assert.equal(got.wins + got.ties + got.losses, step.rounds); continue; }
@@ -211,7 +227,178 @@ const standardHill = HILLS.standard.hill;
   assert.deepEqual(triple(f.fight(x, y, {rounds: 3, position: 4000})), [0, 2, 1]);
   f.dispose();
   assert.throws(() => f.load(stdW[0].asm), /disposed/);
-  console.log(`ok reuse: 1000 mixed fight/exact calls on one instance (${compared} compared with fresh instances), incl. P-space/PIN, failed loads, unload, configure`);
+  console.log(`ok reuse: 1000 mixed fight/exact/fightMany calls on one instance (${compared} compared with fresh instances, ${manyCompared} of them melee), incl. P-space/PIN, failed loads, unload, configure`);
+}
+
+// --- 3b. Melee: fightMany = pMARS (and exMARS CLI) round for round ----------
+// pMARS's score formula, as its eval.c evaluates it: integer arithmetic with
+// C truncation for / and %, unary + - !, comparisons and && || (1 or 0),
+// registers W (warriors) and S (survivors); others are 0.
+function pmarsFormula(formula, W, S) {
+  let i = 0;
+  const peek = () => { while (/\s/.test(formula[i] ?? '')) i++; return formula[i]; };
+  const trunc = x => Math.trunc(x);
+  const ops = {'*': 5, '/': 5, '%': 5, '+': 4, '-': 4, '<': 3, '>': 3, '<=': 3, '>=': 3, '==': 3, '!=': 3, '&&': 2, '||': 1};
+  function op() {
+    peek();
+    const two = formula.slice(i, i + 2), one = formula[i];
+    if (['<=', '>=', '==', '!=', '&&', '||'].includes(two)) return two;
+    return '*/%+-<>'.includes(one) && one ? one : null;
+  }
+  function primary() {
+    const c = peek();
+    if (c === '(') { i++; const v = expr(0); assert.equal(peek(), ')'); i++; return v; }
+    if (c === '+' || c === '-' || c === '!') { i++; const v = primary(); return c === '-' ? -v : c === '!' ? +!v : v; }
+    if (/\d/.test(c)) { let n = ''; while (/\d/.test(formula[i] ?? '')) n += formula[i++]; return Number(n); }
+    if (/[A-Za-z]/.test(c)) { i++; const r = c.toUpperCase(); return r === 'W' ? W : r === 'S' ? S : 0; }
+    throw new Error(`bad formula at ${i}`);
+  }
+  function apply(o, x, y) {
+    switch (o) {
+      case '*': return x * y; case '/': return trunc(x / y); case '%': return x % y;
+      case '+': return x + y; case '-': return x - y;
+      case '<': return +(x < y); case '>': return +(x > y); case '<=': return +(x <= y); case '>=': return +(x >= y);
+      case '==': return +(x === y); case '!=': return +(x !== y); case '&&': return +(x && y); case '||': return +(x || y);
+    }
+  }
+  function expr(min) {
+    let left = primary();
+    for (let o; (o = op()) && ops[o] >= min;) { i += o.length; left = apply(o, left, expr(ops[o] + 1)); }
+    return left;
+  }
+  const v = expr(0);
+  assert.equal(peek(), undefined, 'formula fully parsed');
+  return v;
+}
+const pmarsScore = (formula, hist, n) => {
+  let accu = 0;
+  for (let s = 1; s <= n; s++) accu += hist[s] * pmarsFormula(formula, n, s);
+  return accu;
+};
+// pMARS -k prints, per warrior: score, alive-with-1..n-survivors counts, deaths.
+async function cliMelee(engine, hill, sources, rounds, position, formula) {
+  const files = Object.fromEntries(sources.map((s, k) => [`w${k}.red`, s]));
+  const args = ['-b', '-k', '-r', '' + rounds, ...(position ? ['-F', '' + position] : []), '-s', '' + hill.coreSize,
+    '-c', '' + hill.cycles, '-p', '' + hill.processes, '-l', '' + hill.maxLength, '-d', '' + hill.minDistance];
+  if (formula) args.push('-=', formula);
+  const r = await runCLI(engine, [...args, ...Object.keys(files)], files);
+  assert.equal(r.exitCode, 0, `${engine}: ${r.stderr}`);
+  const rows = r.stdout.trim().split('\n').slice(-sources.length).map(l => l.trim().split(/\s+/).map(Number));
+  const n = sources.length;
+  if (engine === 'pmars') return rows.map(row => ({score: row[0], hist: [row[n + 1], ...row.slice(1, n + 1)]}));
+  return rows.map(row => ({hist: [row[n], ...row.slice(0, n)]}));   // exMARS CLI: alive 1..n, dead
+}
+const FORMULAS = ['(W*W-1)/S', '10*W-S', '(S==1)*W*W+(S>1&&S<W)*(W-S)%3-!S'];
+{
+  const MELEE_HILLS = ['nano', 'tiny', 'standard', 'lp'].filter(n => corpora[n]);
+  let compared = 0;
+  for (const name of MELEE_HILLS) {
+    const {hill} = HILLS[name];
+    const small = name === 'nano' || name === 'tiny';
+    const f = await createFighter(hill);
+    for (const n of [3, 4, 6, 10]) {
+      for (let rep = 0; rep < 2; rep++) {
+        const ws = Array.from({length: n}, () => pick(fightable[name]));
+        const rounds = small ? 10 + rand(40) : 2 + rand(5);
+        // -F for n > 2 is a seed: pMARS accepts minDistance..MAXCORESIZE.
+        const position = rep === 0 ? legal(hill) : hill.minDistance + rand(10 * hill.coreSize);
+        const handles = ws.map(w => f.load(asmCache.get(`${name}/${w.file}/1`)));
+        const got = f.fightMany(handles, {rounds, position}).results;
+        for (const row of got) assert.equal(row.length, n + 1);
+        const label = `${name} n=${n} r=${rounds} F=${position} ${ws.map(w => w.file).join(',')}`;
+        if (havePmars) {
+          const want = await cliMelee('pmars', hill, ws.map(w => w.source), rounds, position);
+          assert.deepEqual(got, want.map(x => x.hist), `pMARS histogram ${label}`);
+          want.forEach((x, k) => assert.equal(pmarsScore(FORMULAS[0], got[k], n), x.score, `default score ${label}`));
+          if (rep === 0) for (const formula of FORMULAS.slice(1)) {
+            const alt = await cliMelee('pmars', hill, ws.map(w => w.source), rounds, position, formula);
+            alt.forEach((x, k) => assert.equal(pmarsScore(formula, got[k], n), x.score, `score ${formula} ${label}`));
+          }
+        }
+        const ex = await cliMelee('exmars', hill, ws.map(w => w.source), rounds, position);
+        assert.deepEqual(got, ex.map(x => x.hist), `exMARS CLI histogram ${label}`);
+        f.setEarlyExit(false);
+        assert.deepEqual(f.fightMany(handles, {rounds, position}).results, got, `early exit off ${label}`);
+        f.setEarlyExit(true);
+        // Random placements: every round is counted once per warrior.
+        const random = f.fightMany(handles, {rounds}).results;
+        assert.ok(random.every(r => r.reduce((x, y) => x + y) === rounds));
+        handles.forEach(h => f.unload(h));
+        compared++;
+      }
+    }
+    f.dispose();
+  }
+  // Warriors exactly fill the core (n * minDistance = coreSize): posit fails, npos places them.
+  const fills = [];
+  if (corpora.nano) fills.push(['nano 16 warriors', HILLS.nano.hill, Array.from({length: 16}, () => pick(fightable.nano).source)]);
+  const synthetic = [';assert 1\nmov 0, 1\n', ';assert 1\nadd #4, 3\nmov 2, @2\njmp -2\ndat #0, #0\n',
+    ';assert 1\nspl 0\nmov 0, 1\n', ';assert 1\njmp 0\n', ';assert 1\nspl 0, <-1\nmov.i #1, -2\n', ';assert 1\ndat 0, 0\n'];
+  fills.push(['36 warriors, coreSize 360', {coreSize: 360, cycles: 3600, processes: 360, maxLength: 10, minDistance: 10},
+    Array.from({length: 36}, (_, k) => synthetic[k % synthetic.length])]);
+  for (const [label, hill, sources] of fills) {
+    const f = await createFighter(hill);
+    const handles = [];
+    for (const s of sources) handles.push(f.load(await assemble(s, hill)));
+    for (const position of [hill.minDistance, hill.minDistance + 123]) {
+      const rounds = 12;
+      const got = f.fightMany(handles, {rounds, position}).results;
+      if (havePmars) assert.deepEqual(got, (await cliMelee('pmars', hill, sources, rounds, position)).map(x => x.hist), `fill ${label}`);
+      assert.deepEqual(got, (await cliMelee('exmars', hill, sources, rounds, position)).map(x => x.hist), `fill exMARS ${label}`);
+    }
+    assert.throws(() => f.fightMany([...handles, handles[0]], {rounds: 1}), /exceeds coreSize|2\.\.36/);
+    f.dispose();
+  }
+  // P-space and PIN across n warriors: writer/reader pairs share by PIN, learner keeps
+  // its P-space across the rounds of a match only.
+  {
+    const hill = standardHill;
+    const sources = [fixture('pin_writer.red'), learner, fixture('pin_reader.red'), idle, fixture('immediate_b_stp.red'),
+      ...(corpora.standard ? fightable.standard.filter(w => /^\s*pin\b/im.test(w.source)).slice(0, 3).map(w => w.source) : [])];
+    const f = await createFighter(hill);
+    const handles = [];
+    for (const s of sources) handles.push(f.load(await assemble(s, hill)));
+    for (const [position, rounds] of [[4000, 6], [137, 4], [100, 9]]) {
+      const got = f.fightMany(handles, {rounds, position}).results;
+      if (havePmars) assert.deepEqual(got, (await cliMelee('pmars', hill, sources, rounds, position)).map(x => x.hist), `P-space melee F=${position}`);
+      assert.deepEqual(got, (await cliMelee('exmars', hill, sources, rounds, position)).map(x => x.hist), `P-space melee exMARS F=${position}`);
+      assert.deepEqual(f.fightMany(handles, {rounds, position}).results, got, 'P-space resets between matches');
+    }
+    // The learner dies only in a match's first round (unless killed by others): check alone with idles.
+    const lone = [learner, idle, idle].map(s => s);
+    const lh = [];
+    for (const s of lone) lh.push(f.load(await assemble(s, hill)));
+    assert.deepEqual(f.fightMany(lh, {rounds: 4, position: 4000}).results[0], [1, 0, 0, 3]);
+    assert.deepEqual(f.fightMany(lh, {rounds: 4, position: 4000}).results[0], [1, 0, 0, 3]);
+    f.dispose();
+  }
+  // Two warriors: fightMany equals fight; argument checks.
+  if (corpora.nano) {
+    const {hill} = HILLS.nano;
+    const f = await createFighter(hill);
+    for (let k = 0; k < 10; k++) {
+      const a = f.load(asmCache.get(`nano/${pick(fightable.nano).file}/1`)), b = f.load(asmCache.get(`nano/${pick(fightable.nano).file}/1`));
+      const rounds = 1 + rand(30), position = legal(hill);
+      const pair = f.fight(a, b, {rounds, position}), many = f.fightMany([a, b], {rounds, position}).results;
+      assert.deepEqual([many[0][1], many[0][2], many[0][0]], triple(pair));
+      assert.deepEqual([many[1][1], many[1][2], many[1][0]], [pair.losses, pair.ties, pair.wins]);
+    }
+    const h = f.load(asmCache.get(`nano/${fightable.nano[0].file}/1`));
+    assert.throws(() => f.fightMany([h], {rounds: 1}), /2\.\.36/);
+    assert.throws(() => f.fightMany(Array(37).fill(h), {rounds: 1}), /2\.\.36/);
+    assert.throws(() => f.fightMany(Array(17).fill(h), {rounds: 1}), /exceeds coreSize/);
+    assert.throws(() => f.fightMany([h, h, 99999], {rounds: 1}), /Unknown warrior handle/);
+    assert.throws(() => f.fightMany([h, h, h], {rounds: 0}), /rounds/);
+    assert.throws(() => f.fightMany([h, h, h], {rounds: 1, position: 4}), /position/);
+    assert.throws(() => f.fightMany([h, h, h], {rounds: 1, position: 2 ** 30 + 1}), /position/);
+    assert.throws(() => f.fightMany([h, h], {rounds: 1, position: 76}), /position/);
+    assert.throws(() => f.fightMany([h, h, h], {rounds: 1, seed: 3}), /Unsupported fight option/);
+    assert.equal(f.fightMany(Array(16).fill(h), {rounds: 2, position: 2 ** 30}).results.length, 16);
+    f.dispose();
+  }
+  console.log(`ok melee: fightMany = pMARS${havePmars ? '' : ' (skipped)'} and exMARS CLI histograms on ${compared} matches ` +
+    `(3/4/6/10 warriors, nano/tiny/standard/lp), scores under ${FORMULAS.length} formulas, early exit on = off, ` +
+    'full-core placement (16 and 36 warriors), P-space/PIN melee, 2-warrior fightMany = fight');
 }
 
 // --- 4. Assembler ------------------------------------------------------------
@@ -348,6 +535,30 @@ if (corpora['94nop']) {
   console.log(`throughput standard (94top50): ${perCandidate.toFixed(0)} ms per candidate vs ${handles.length} opponents at 250 rounds ` +
     `(${(perCandidate / handles.length).toFixed(1)} ms per match); first 5 opponents: fighter ${fighter5.toFixed(1)} ms, ` +
     `runMatch ${runMatch5.toFixed(1)} ms per 250-round match`);
+  f.dispose();
+}
+if (corpora['94nop']) {
+  const {hill} = HILLS['94nop'];
+  const ws = fightable['94nop'].slice(0, 10);
+  const f = await createFighter(hill);
+  const handles = [];
+  for (const w of ws) handles.push(f.load(await asm('94nop', w)));
+  f.fightMany(handles, {rounds: 5, position: 1234});
+  let t = performance.now();
+  const got = f.fightMany(handles, {rounds: 200, position: 1234}).results;
+  const fighterMs = ms(t);
+  t = performance.now();
+  const ex = await cliMelee('exmars', hill, ws.map(w => w.source), 200, 1234);
+  const exMs = ms(t);
+  assert.deepEqual(got, ex.map(x => x.hist));
+  let line = `throughput melee (10 x 94top50, 200 rounds): fighter ${fighterMs.toFixed(0)} ms, exMARS CLI (runCLI) ${exMs.toFixed(0)} ms`;
+  if (havePmars) {
+    t = performance.now();
+    const pm = await cliMelee('pmars', hill, ws.map(w => w.source), 200, 1234);
+    line += `, pMARS CLI (runCLI) ${ms(t).toFixed(0)} ms`;
+    assert.deepEqual(got, pm.map(x => x.hist));
+  }
+  console.log(line);
   f.dispose();
 }
 console.log('ok fighter tests');

@@ -6,6 +6,7 @@
  *   const h = f.load(w);                     // handle
  *   f.fight(h, h2, {rounds: 250, position: 1234});  // {wins, ties, losses}
  *   f.exact(h, h2);                          // {wins, ties, losses, rounds}
+ *   f.fightMany([h, h2, h3], {rounds: 200, position: 1234});  // {results: [[dead, alive1..aliveN], ...]}
  *
  * hill = {coreSize, cycles, processes, maxLength, minDistance}. Instructions are
  * 6-int tuples [opcode, modifier, aMode, aValue, bMode, bValue] numbered as in
@@ -14,6 +15,8 @@
 const HILL_KEYS = ['coreSize', 'cycles', 'processes', 'maxLength', 'minDistance'];
 const MAX_SOURCE_BYTES = 65536;
 const MAX_ROUNDS = 1000000;
+const MAX_WARRIORS = 36;                     // pMARS MAXWARRIOR
+const MAX_FIXED_POSITION = 2 ** 30;          // pMARS MAXCORESIZE, the largest -F
 const factories = new Map();
 
 function factory(name) {
@@ -112,12 +115,14 @@ export async function assemble(source, hill, {rounds = 1} = {}) {
 }
 
 class Fighter {
-  #m; #hill; #out; #scratch = 0; #scratchInts = 0; #handles = new Set();
+  #m; #hill; #out; #manyIn; #manyOut; #scratch = 0; #scratchInts = 0; #handles = new Set();
 
   constructor(module) {
     this.#m = module;
     this.#out = module._malloc(12);
-    if (!this.#out) throw new Error('Out of memory');
+    this.#manyIn = module._malloc(4 * MAX_WARRIORS);
+    this.#manyOut = module._malloc(4 * MAX_WARRIORS * (MAX_WARRIORS + 1));
+    if (!this.#out || !this.#manyIn || !this.#manyOut) throw new Error('Out of memory');
   }
 
   #live() { if (!this.#m) throw new Error('Fighter disposed'); return this.#m; }
@@ -204,6 +209,32 @@ class Fighter {
     return this.#result();
   }
 
+  /**
+   * One match of 2..36 warriors (handles may repeat), as pMARS runs a multi-warrior
+   * battle: placements from `position` as the CLI's -F (0 = random), starting order
+   * rotated each round, P-space fresh per match and shared by equal PINs.
+   * Returns {results}: results[i][0] = rounds warrior i ended dead, results[i][k] =
+   * rounds it ended alive with k survivors (k = 1..n), in input order.
+   */
+  fightMany(handles, {rounds, position = 0, ...rest} = {}) {
+    const m = this.#live();
+    for (const key of Object.keys(rest)) throw new Error(`Unsupported fight option: ${key}`);
+    if (!Array.isArray(handles) || handles.length < 2 || handles.length > MAX_WARRIORS)
+      throw new RangeError(`handles must list 2..${MAX_WARRIORS} warriors`);
+    handles.forEach(h => this.#handle(h));
+    const n = handles.length, {coreSize, minDistance} = this.#hill;
+    if (n * minDistance > coreSize) throw new RangeError('warriors * minDistance exceeds coreSize');
+    if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) throw new RangeError('Invalid rounds');
+    const top = n === 2 ? coreSize - minDistance : MAX_FIXED_POSITION;
+    if (!Number.isSafeInteger(position) || (position !== 0 && (position < minDistance || position > top)))
+      throw new RangeError(`position must be 0 or ${minDistance}..${top}`);
+    m.HEAP32.set(handles, this.#manyIn >> 2);
+    this.#check(m._ex_fight_many(this.#manyIn, n, rounds, position, this.#manyOut));
+    const base = this.#manyOut >> 2, heap = this.#m.HEAP32, results = [];
+    for (let i = 0; i < n; i++) results.push(Array.from(heap.subarray(base + i * (n + 1), base + (i + 1) * (n + 1))));
+    return {results};
+  }
+
   /** Every legal relative position in both starting orders, one round each. */
   exact(a, b) {
     const m = this.#live();
@@ -219,6 +250,8 @@ class Fighter {
     this.#m._ex_configure(0, 0, 0, 0, 0);   // frees the simulator and all warriors (returns an error by design)
     if (this.#scratch) this.#m._free(this.#scratch);
     this.#m._free(this.#out);
+    this.#m._free(this.#manyIn);
+    this.#m._free(this.#manyOut);
     this.#handles.clear();
     this.#m = null;
   }

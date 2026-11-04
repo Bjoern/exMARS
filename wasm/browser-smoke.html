@@ -32,6 +32,7 @@ try {
   const f=await request({method:'fighter',warriors,options:{hill,rounds:4,position:5}});
   if(f.fight.wins!==4 || f.fight.ties!==0 || f.fight.losses!==0) throw new Error('fighter scores differ');
   if(f.exact.rounds!==142 || f.exact.wins!==142) throw new Error('fighter exact differs');
+  if(JSON.stringify(f.melee.results)!=='[[0,4,0,0],[4,0,0,0],[4,0,0,0]]') throw new Error('fighter melee differs');
   const imp=';redcode-94\n;assert CORESIZE==80\nmov 0,1\nend\n';
   const g=await request({method:'fighter',warriors:[imp,imp],options:{hill,rounds:6,position:40}});
   if(g.fight.ties!==6 || g.exact.ties!==142) throw new Error('fighter reuse differs');
@@ -40,7 +41,7 @@ try {
   if(!failed) throw new Error('broken source accepted');
   const h=await request({method:'fighter',warriors,options:{hill,rounds:2,position:7}});
   if(h.fight.wins!==2) throw new Error('fighter after failed assembly differs');
-  lines.push('Persistent fighter: assemble, fight 4-0-0, exact 142-0-0 in a module Worker.');
+  lines.push('Persistent fighter: assemble, fight 4-0-0, exact 142-0-0, 3-warrior melee in a module Worker.');
   document.querySelector('#result').textContent='PASS\n'+lines.join('\n');
 } catch(e) { document.querySelector('#result').textContent='FAIL\n'+e.stack; }
 finally { worker.terminate(); }
