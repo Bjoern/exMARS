@@ -74,5 +74,10 @@ wasm:
 
 wasm-test:
 	node wasm/test.mjs dist/wasm
+	node wasm/test-fighter.mjs dist/wasm
 
-.PHONY: wasm wasm-test
+# Copy the fighter/assembler files corewar.dev vendors into wasm/release (tracked).
+wasm-release:
+	python3 wasm/release.py dist/wasm wasm/release
+
+.PHONY: wasm wasm-test wasm-release

@@ -10,3 +10,4 @@ bin/
 /dist/
 /benchmarks/comparison/94top50.txt
 /benchmarks/comparison/nanobm07.txt
+/warriors/benchmark/

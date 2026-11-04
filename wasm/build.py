@@ -38,7 +38,26 @@ def build(name, folder, sources, defines=()):
          '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=536870912', '-sSTACK_SIZE=2097152',
          '-sEXPORTED_RUNTIME_METHODS=["callMain","FS"]', '-o', out / (name + '.mjs')])
 
+def build_api(name, sources, exports, exit_runtime, defines=()):
+    """Library module called through exports, not a CLI: no main, no MEMFS."""
+    for file in sources:
+        file = Path(file)
+        source_hashes[str(file)] = hashlib.sha256(file.read_bytes()).hexdigest()
+    run([a.emcc, '-std=gnu17', '-O3', '-Wno-incompatible-pointer-types',
+         *defines, '-I' + str(ROOT), *sources,
+         '-sMODULARIZE=1', '-sEXPORT_ES6=1', '-sENVIRONMENT=web,worker,node',
+         '-sEXIT_RUNTIME=' + str(exit_runtime),
+         '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=536870912', '-sSTACK_SIZE=2097152',
+         '-sEXPORTED_FUNCTIONS=' + json.dumps(['_' + e for e in exports] + ['_malloc', '_free']),
+         '-sEXPORTED_RUNTIME_METHODS=["HEAPU8","HEAP32","UTF8ToString"]', '-o', out / (name + '.mjs')])
+
 h = ROOT / 'benchmarks/comparison'
+# Persistent fighter: sim.c + pspace.c only, so the pMARS parser's exit paths are absent.
+build_api('fighter', [ROOT / 'wasm/fighter.c', ROOT / 'sim.c', ROOT / 'pspace.c'],
+          ['ex_configure', 'ex_load', 'ex_unload', 'ex_fight', 'ex_fight_exact', 'ex_set_early_exit', 'ex_error'], 0)
+# Assembler: run in a fresh instance per call, since the parser can exit().
+build_api('assembler', [ROOT / 'wasm/assembler.c', ROOT / 'pmars.c', ROOT / 'sim.c', ROOT / 'pspace.c'],
+          ['ex_assemble', 'ex_result', 'ex_name', 'ex_author', 'ex_message'], 1, ['-Dmain=exmars_cli_main'])
 for name, defines in [('exmars', []), ('reference-exmars', ['-DEXMARS_REFERENCE'])]:
     build(name, ROOT, [ROOT / f for f in ['pmars.c', 'sim.c', 'pspace.c']], defines)
 for name, defines in [('optimized-exmars', ['-DEARLY=1']), ('exact-exmars', ['-DEARLY=0'])]:
@@ -68,14 +87,14 @@ if a.pmars_source:
     obj = patched / 'pmars-wasm.o'
     run([a.emcc, '-std=gnu17', '-O3', *flags, '-Dmain=pmars_cli_main', '-c', patched / 'pmars.c', '-o', obj])
     build('bench-pmars', patched, [h / 'pmars_adapter.c', obj, *[patched / f for f in names if f != 'pmars.c']], flags)
-for name in ['client.mjs', 'worker.mjs', 'benchmark.mjs', 'README.md', 'build.py', 'browser-smoke.html']:
+for name in ['client.mjs', 'worker.mjs', 'benchmark.mjs', 'fighter-client.mjs', 'README.md', 'build.py', 'browser-smoke.html']:
     shutil.copy2(ROOT / 'wasm' / name, out / name)
 # Hash headers too, since they affect instruction representation and hot loops.
 for folder in [ROOT, h, original] + ([a.pmars_source.resolve()] if a.pmars_source else []):
     for file in list(folder.glob('*.h')) + list(folder.glob('*.inc')):
         source_hashes[str(file)] = hashlib.sha256(file.read_bytes()).hexdigest()
 # Ship corresponding source and notices beside the binaries.
-for label, folder in [('exmars', ROOT), ('benchmark', h), ('original-exmars', original)] + ([('pmars', a.pmars_source.resolve())] if a.pmars_source else []):
+for label, folder in [('exmars', ROOT), ('wasm-api', ROOT / 'wasm'), ('benchmark', h), ('original-exmars', original)] + ([('pmars', a.pmars_source.resolve())] if a.pmars_source else []):
     target = out / 'sources' / label
     target.mkdir(parents=True, exist_ok=True)
     for pattern in ['*.c', '*.h', '*.inc', 'README*', 'COPYING*', 'AUTHORS*']:
