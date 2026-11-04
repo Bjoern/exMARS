@@ -73,6 +73,7 @@ build('bench-original-exmars', original, [h / 'exhaust_adapter.c', original / 's
 if a.pmars_source:
     folder = a.pmars_source.resolve()
     names = ['pmars.c', 'asm.c', 'eval.c', 'disasm.c', 'cdb.c', 'sim.c', 'pos.c', 'clparse.c', 'global.c', 'token.c', 'str_eng.c']
+    names += [f for f in ['configpath.c'] if (folder / f).is_file()]   # pmars-ai: config-file search path
     flags = ['-DEXT94', '-DPERMUTATE', '-DRWLIMIT', '-DSERVER']
     build('pmars', folder, [folder / f for f in names], flags)
     # Only the benchmark copy changes placement scheduling; interpreter unchanged.
