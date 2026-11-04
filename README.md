@@ -137,4 +137,5 @@ only upload temporary workflow artifacts.
 
 Browser/Worker and Node modules, tournament API, and comparisons against pMARS
 and original exMARS are documented in [wasm/README.md](wasm/README.md).
-Build with `make wasm PMARS_SOURCE=../pmars_experiments/src` after activating Emscripten.
+Build with `make wasm PMARS_SOURCE=../pmars-ai/src` after activating Emscripten,
+with [pmars-org/pmars-ai](https://github.com/pmars-org/pmars-ai) cloned next to this repository.

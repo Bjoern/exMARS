@@ -11,9 +11,12 @@ Use Emscripten 4.0.23 (the tested version) with its environment activated:
 
 ```sh
 source /path/to/emsdk/emsdk_env.sh
-make wasm PMARS_SOURCE=../pmars_experiments/src
+make wasm PMARS_SOURCE=../pmars-ai/src
 make wasm-test
 ```
+
+The pMARS comparison uses [pmars-org/pmars-ai](https://github.com/pmars-org/pmars-ai)
+at commit `7c221e114501a6312068cda90a2661589b8c04a2`, cloned next to this repository.
 
 `make wasm-release` then copies the persistent fighter's files (`fighter.mjs`,
 `fighter.wasm`, `assembler.mjs`, `assembler.wasm`, `fighter-client.mjs`), a
@@ -250,7 +253,7 @@ custom P-space size, arbitrary score formulas, no-P-space submission enforcement
 or the site's random seed string convention. Do not silently ignore those
 settings when integrating. The benchmark's exhaustive nano schedule is separate
 from the production match API. The pMARS comparison here is rebuilt from the
-local `pmars_experiments/src` tree, not the site's deployed custom WASM binary.
+local `pmars-ai/src` tree (commit `7c221e1`), not the site's deployed custom WASM binary.
 
 To verify actual browser loading, serve `dist/wasm` over HTTP and visit
 `browser-smoke.html`. It runs all three match engines, all four benchmark

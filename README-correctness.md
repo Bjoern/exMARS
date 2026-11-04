@@ -26,7 +26,7 @@ cc -std=gnu17 -O2 -I. tests/engine/pspace_endgame.c sim.c pspace.c -o test-pspac
 
 Validated with GCC 16.1.0 on Windows x64: all 12 CLI cases, independent MUL oracle
 at four core sizes, and the two-turn SPL/STP P-space regression pass.
-The evaluator is adapted from pMARS 0.9.6 (corewar.dev/pmars_experiments);
+The evaluator is adapted from pMARS 0.9.6 (pmars-org/pmars-ai);
 original source notices remain. No Python binding or optimized scheduler is
 required. Changes and tests were prepared with AI assistance and need upstream
 review like any other contribution.

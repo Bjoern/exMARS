@@ -2,7 +2,7 @@
 
 Each case fights two fixtures and expects pMARS's wins/ties rows, in both the
 default (safe early ties) and -X (exact) modes. The expectations come from
-pMARS 0.9.6 (corewar.dev pmars_experiments, built with -DEXT94 -DPERMUTATE
+pMARS 0.9.6 (pmars-org/pmars-ai, built with -DEXT94 -DPERMUTATE
 -DRWLIMIT -DSERVER); every case fails on the exMARS that preceded the fix.
 
     python tests/pmars_compat/run.py path/to/exmars-fast.exe [--pmars path/to/pmars.exe]

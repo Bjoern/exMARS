@@ -1,6 +1,6 @@
 {
   "compiler": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 4.0.23 (7a5d93b50f6a3a35e85a0d2fc9e667b8498e6aed)",
-  "builtFromParentCommit": "ecbff45b02f2caf66a0f7dea87823b70342c08fe",
+  "builtFromParentCommit": "3698223abc4b9edd782575c5c76914b18ef569b7",
   "commands": [
     [
       "emcc",
@@ -51,9 +51,9 @@
     "wasm/fighter.c": "be88e66d7313ba32a2193c57c670e1ca0a80c272a201b05cea76fe0b0d7f1205",
     "wasm/assembler.c": "13d8550e216e43c3cff99c5ed187b6be114e115c0b01a6f15ab0ced609818ff5",
     "wasm/fighter-client.mjs": "8d5441d24333dd946104edda636008a76a72e3c2b35b17d7b44b88a99da7011b",
-    "wasm/build.py": "29c1ce27d54d3f70b8e385395a3fb27c9758df61ae757afe4f17ea4f0a06f077",
+    "wasm/build.py": "0854712515595e84ef86a96962f26a65ebc476ab9c6f49ead82c1d5dc55ff3f8",
     "wasm/release.py": "a2ebda501a90e8ce9e806b389da9ca073c0deb289e3850d8b4c88876cb862f1d",
-    "wasm/README.md": "24fcb91a7ae37df3e2325548273db52dffb408b573eb9a76d42d23ba4ba8889c",
+    "wasm/README.md": "14292fb136e9e684706db9f2c1b8b5de13a5930751252a78882e742b07ee2925",
     "pmars.c": "0d298716cf40c73059af1728431b2ccd7dd6a130ed95aba4c589cfd6d06802f6",
     "sim.c": "e5e3d4281fca04a4682713ac679f6a60c9db1b677784f71f89eeaa72c7c1fc9a",
     "sim_loop.inc": "24cede1b57533d032d35496e8c3b88bfd8854be6c089c52bcfcbcfc4df7f6695",
@@ -65,7 +65,7 @@
     "pspace.h": "4a7ccd893621cc592ac00638cae4bfdecc9a01185ff5afb0ec4465bc0a7523e8",
     "hill_config.h": "720f2da53099a9e449a6ba3a8a8af593c83ee1c30a5ef58a3f828a19fe31fb89",
     "Warrior.py": "211ceb1a84494edff427dc7cef99f407e1457bdba71f60665ca66ccba2ac2afc",
-    "README.md": "f2c235dcc63aab7695fc163fa81cb82e641cf094304990f420ad2004397fed25"
+    "README.md": "e57f5c54abf67691153490a399a7e2478516a6bbdc0b1a0728208686d204862a"
   },
   "files": {
     "fighter.mjs": "f732639998a52fa4140ab8bf53fffa7abc6d1eec44ec4c4a583b679c158f34f1",
@@ -73,6 +73,6 @@
     "assembler.mjs": "3ffec725c18f10a32cc194fd9320de84cf15e3f7193fd0e100ea01dcaa38f19c",
     "assembler.wasm": "743f44b0e3f7598e61d7e23eab86ea86f5c2f3faf89f68a2aa7ab3e963d20172",
     "fighter-client.mjs": "8d5441d24333dd946104edda636008a76a72e3c2b35b17d7b44b88a99da7011b",
-    "exmars-fighter-src.zip": "1ea44ef30587faec0d80e43ac8980bce7d4acc3b80d5550ffd0679e0f2fbe47d"
+    "exmars-fighter-src.zip": "6a5b10f66e71e59cda071edec2e2596df1004588ca2f6530a7b0d9a3a5836f1d"
   }
 }
