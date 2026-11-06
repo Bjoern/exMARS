@@ -24,6 +24,73 @@ function factory(name) {
   return factories.get(name);
 }
 
+// Wasm modules, fetched and compiled once per realm (page, Worker or Node process),
+// so a new instance costs neither a request nor a compile.
+const compiledModules = new Map();
+
+async function compileWasm(name) {
+  const url = new URL(`./${name}.wasm`, import.meta.url);
+  if (url.protocol === 'file:') {
+    const {readFile} = await import('node:fs/promises');
+    return WebAssembly.compile(await readFile(url));
+  }
+  if (typeof WebAssembly.compileStreaming === 'function') {
+    // Falls back to an array buffer when the server sends another MIME type.
+    try { return await WebAssembly.compileStreaming(fetch(url, {credentials: 'same-origin'})); } catch {}
+  }
+  const response = await fetch(url, {credentials: 'same-origin'});
+  if (!response.ok) throw new Error(`Failed to load ${url}: HTTP ${response.status}`);
+  return WebAssembly.compile(await response.arrayBuffer());
+}
+
+function compiledModule(name) {
+  if (!compiledModules.has(name)) {
+    const loading = compileWasm(name);
+    compiledModules.set(name, loading);
+    loading.catch(() => compiledModules.delete(name));  // try again on the next call
+  }
+  return compiledModules.get(name);
+}
+
+// A fresh Emscripten instance of `name` from its compiled module. Emscripten's
+// instantiateWasm hook can only report success, so a failed instantiation rejects
+// through `failed` instead of leaving the call waiting forever.
+async function freshInstance(name, options) {
+  const [create, wasm] = await Promise.all([factory(name), compiledModule(name)]);
+  let fail;
+  const failed = new Promise((_, reject) => { fail = reject; });
+  return Promise.race([failed, create({...options, instantiateWasm: (imports, done) => {
+    WebAssembly.instantiate(wasm, imports).then(instance => done(instance, wasm), fail);
+    return {};
+  }})]);
+}
+
+// The assembler instance assemble() calls, one per realm. The pMARS parser can run
+// many times in one process (the Python binding does), but assembler.c never frees
+// a call's buffers, the parser can exit(), and wasm memory never shrinks. So an
+// instance is retired once its memory has grown past ASSEMBLER_MEMORY_LIMIT, and at
+// once after an exit() or a trap. A fresh instance per call, as before, made a new
+// wasm memory per warrior: browsers free those only when that realm's garbage
+// collector runs, so Workers assembling many warriors (an evolver) ran out of
+// memory (Edge: "Cannot allocate Wasm memory for new instance", or a crashed tab).
+const ASSEMBLER_MEMORY_LIMIT = 32 * 1024 * 1024;
+let assembler = null;  // {ready: Promise<{module, sink, entry}>}
+
+function assemblerInstance() {
+  if (!assembler) {
+    const entry = {}, sink = {lines: null}, out = s => sink.lines?.push(s);
+    entry.ready = freshInstance('assembler', {print: out, printErr: out, quit: (code, toThrow) => { throw toThrow; }})
+      .then(module => ({module, sink, entry}));
+    entry.ready.catch(() => retireAssembler(entry));
+    assembler = entry;
+  }
+  return assembler.ready;
+}
+
+function retireAssembler(entry) {
+  if (assembler === entry) assembler = null;
+}
+
 /** Returns a frozen copy of the five hill settings; throws on anything else. */
 export function validateHill(hill) {
   if (!hill || typeof hill !== 'object') throw new TypeError('hill must be an object');
@@ -71,8 +138,10 @@ function splitDiagnostics(lines) {
 }
 
 /**
- * Assembles one Redcode source for a hill in a fresh assembler instance (the
- * pMARS parser can exit(), so instances are never reused).
+ * Assembles one Redcode source for a hill. The assembler instance is shared by
+ * the calls of a realm and replaced after an exit() or a trap of the pMARS parser
+ * and when its memory has grown (see ASSEMBLER_MEMORY_LIMIT); everything a call
+ * returns is read before the next call can run.
  * Options: rounds (default 1, as the Python binding) sets the ROUNDS constant.
  */
 export async function assemble(source, hill, {rounds = 1} = {}) {
@@ -82,20 +151,23 @@ export async function assemble(source, hill, {rounds = 1} = {}) {
   const h = validateHill(hill);
   if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) throw new RangeError('Invalid rounds');
   const stderr = [];
-  const create = await factory('assembler');
+  const {module, sink, entry} = await assemblerInstance();
+  // From here to the return nothing awaits, so no other call uses the instance meanwhile.
   const restore = nodeExitGuard();
-  let module, status;
+  let status;
+  sink.lines = stderr;
   try {
-    module = await create({print: s => stderr.push(s), printErr: s => stderr.push(s),
-      quit: (code, toThrow) => { throw toThrow; }});
     const src = writeString(module, source);
     status = module._ex_assemble(src, h.coreSize, h.cycles, h.processes, h.maxLength, h.minDistance, rounds);
+    module._free(src);
   } catch (e) {
+    retireAssembler(entry);
     if (e?.name !== 'ExitStatus' && !(e instanceof WebAssembly.RuntimeError)) throw e;
     const d = splitDiagnostics(stderr);
     if (e instanceof WebAssembly.RuntimeError) d.other.push(`Assembler aborted: ${e.message}`);
     return {ok: false, errors: [...d.errors, ...d.other].join('\n'), warnings: d.warnings.join('\n')};
-  } finally { restore(); }
+  } finally { sink.lines = null; restore(); }
+  if (module.HEAPU8.length > ASSEMBLER_MEMORY_LIMIT) retireAssembler(entry);  // still readable below
   const d = splitDiagnostics(stderr);
   if (status < 0) throw new Error(`Assembler rejected settings: ${module.UTF8ToString(module._ex_message())}`);
   if (status !== 0) {

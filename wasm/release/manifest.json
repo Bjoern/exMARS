@@ -50,10 +50,10 @@
   "sources": {
     "wasm/fighter.c": "95aa6694fa9694d6572860e7c13be0e8e555666e1e0610760e4302d2fb606c20",
     "wasm/assembler.c": "13d8550e216e43c3cff99c5ed187b6be114e115c0b01a6f15ab0ced609818ff5",
-    "wasm/fighter-client.mjs": "b81513ce97a22d54cd6d191f8eff88b1cbca29973347beab8aa9674f61341926",
+    "wasm/fighter-client.mjs": "60558b884cb8822ee46b6ea91923c5c78aa587677451f52aeb9c5b486f200eac",
     "wasm/build.py": "309763eeeab4469ba1986793da820c4697e2b9a04dca3920796e406373ded766",
     "wasm/release.py": "a2ebda501a90e8ce9e806b389da9ca073c0deb289e3850d8b4c88876cb862f1d",
-    "wasm/README.md": "c596026491617018cc7f0043d3abedd2cd21d8db5583dfae77deb7a792cae62f",
+    "wasm/README.md": "76c83afbe8c4d705253a33f1931897bba03470bba282c003168a52a311f678ae",
     "pmars.c": "0d298716cf40c73059af1728431b2ccd7dd6a130ed95aba4c589cfd6d06802f6",
     "sim.c": "e5e3d4281fca04a4682713ac679f6a60c9db1b677784f71f89eeaa72c7c1fc9a",
     "sim_loop.inc": "24cede1b57533d032d35496e8c3b88bfd8854be6c089c52bcfcbcfc4df7f6695",
@@ -72,7 +72,7 @@
     "fighter.wasm": "02b9d0651a622abcf903db984b7e91615fb0176ba1c187f1bf841a6eebb0f3c0",
     "assembler.mjs": "3ffec725c18f10a32cc194fd9320de84cf15e3f7193fd0e100ea01dcaa38f19c",
     "assembler.wasm": "743f44b0e3f7598e61d7e23eab86ea86f5c2f3faf89f68a2aa7ab3e963d20172",
-    "fighter-client.mjs": "b81513ce97a22d54cd6d191f8eff88b1cbca29973347beab8aa9674f61341926",
-    "exmars-fighter-src.zip": "3de60f6c3a6287435e28ea640b0b92fcf773e516473909378c52e50c37dd1273"
+    "fighter-client.mjs": "60558b884cb8822ee46b6ea91923c5c78aa587677451f52aeb9c5b486f200eac",
+    "exmars-fighter-src.zip": "c586a03ff45deaf2fffae26272f84ffa3193e4af73e6a33db114ffe09d0dc17e"
   }
 }
