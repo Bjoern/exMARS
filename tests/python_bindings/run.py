@@ -14,12 +14,14 @@ bin/generic. Checks:
     BIN_DIR/exmars-fast.exe) and, with --pmars, pMARS.
 """
 import argparse
+import gc
 import hashlib
 import json
 import os
 import random
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "..", "pmars_compat")
@@ -124,6 +126,31 @@ try:
     check("fixed_position below minimum separation rejected", "accepted", "ValueError")
 except ValueError:
     check("fixed_position below minimum separation rejected", "ValueError", "ValueError")
+
+# Parsing must not leak Python objects: parse_string once leaked name, authorName,
+# startPos and fileName (four objects per warrior), which adds up in an evolver.
+m = Mars.Mars(2, 80, 800, 80, 5, 5)
+source = ";redcode-94\n;name leak\n;author test\n;assert 1\nspl.b #3, }1\nmov.i 2, }1\ndjn.f -1, {-2\nend\n"
+for _ in range(200):
+    m.parse_string(source)
+gc.collect()
+before = sys.getallocatedblocks()
+for _ in range(5000):
+    m.fight(m.parse_string(source), m.parse_string(source))
+gc.collect()
+growth = sys.getallocatedblocks() - before
+check("parse_string and fight do not leak (allocated blocks after 10000 parses)",
+      "flat" if growth < 500 else f"+{growth}", "flat")
+
+# Comment text that is not UTF-8 (many old warriors are Latin-1) must not fail the parse.
+with tempfile.TemporaryDirectory() as tmp:
+    path = os.path.join(tmp, "latin1.red")
+    with open(path, "wb") as f:
+        f.write(";redcode-94\n;name Caf\xe9\n;assert 1\nmov.i 0, 1\nend\n".encode("latin-1"))
+    try:
+        check("non-UTF-8 name parses", m.parse_file(path).name, "Caf�")
+    except Exception as error:
+        check("non-UTF-8 name parses", repr(error), "Caf�")
 
 if args.hills:
     for suite in ("94top50", "psptop50"):

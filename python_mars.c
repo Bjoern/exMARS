@@ -183,6 +183,26 @@ import_warrior_classes(void)
  * =================================================================
  */
 
+// Helper: sets obj.name = value and releases the new reference to value, which
+// PyObject_SetAttrString does not take over. Returns -1 with an exception set on failure.
+static int
+set_new_attr(PyObject *obj, const char *name, PyObject *value)
+{
+    int result;
+    if (value == NULL) return -1;
+    result = PyObject_SetAttrString(obj, name, value);
+    Py_DECREF(value);
+    return result;
+}
+
+// Helper: a str from text in the warrior's comments; bytes that are not UTF-8
+// (old warriors are often Latin-1) become U+FFFD instead of failing the parse.
+static PyObject*
+text_from_c(const char *s)
+{
+    return PyUnicode_DecodeUTF8(s ? s : "", (Py_ssize_t) strlen(s ? s : ""), "replace");
+}
+
 // Helper: Converts a C warrior_struct into a Python Warrior object.
 static PyObject*
 create_python_warrior_from_c_struct(mars_t* mars, warrior_struct* w, const char* fileName)
@@ -194,14 +214,14 @@ create_python_warrior_from_c_struct(mars_t* mars, warrior_struct* w, const char*
     pWarrior = PyObject_CallObject(pWarriorClass, NULL);
     if (pWarrior == NULL) return NULL;
 
-    PyObject_SetAttrString(pWarrior, "name", PyUnicode_FromString(w->name));
-    PyObject_SetAttrString(pWarrior, "authorName", PyUnicode_FromString(w->authorName));
-    PyObject_SetAttrString(pWarrior, "startPos", PyLong_FromLong(w->offset));
-    PyObject_SetAttrString(pWarrior, "fileName", PyUnicode_FromString(fileName));
-    if (w->pSpaceIndex == PIN_APPEARED) {
-        PyObject *pPin = PyLong_FromLong(w->pSpaceIDNumber);
-        PyObject_SetAttrString(pWarrior, "pin", pPin);
-        Py_XDECREF(pPin);
+    if (set_new_attr(pWarrior, "name", text_from_c(w->name)) < 0 ||
+        set_new_attr(pWarrior, "authorName", text_from_c(w->authorName)) < 0 ||
+        set_new_attr(pWarrior, "startPos", PyLong_FromLong(w->offset)) < 0 ||
+        set_new_attr(pWarrior, "fileName", text_from_c(fileName)) < 0 ||
+        (w->pSpaceIndex == PIN_APPEARED &&
+         set_new_attr(pWarrior, "pin", PyLong_FromLong(w->pSpaceIDNumber)) < 0)) {
+        Py_DECREF(pWarrior);
+        return NULL;
     }
 
     pInstructions = PyList_New(0);
@@ -253,12 +273,19 @@ create_python_warrior_from_c_struct(mars_t* mars, warrior_struct* w, const char*
             return NULL;
         }
 
-        PyList_Append(pInstructions, pInstruction);
+        if (PyList_Append(pInstructions, pInstruction) < 0) {
+            Py_DECREF(pInstruction);
+            Py_DECREF(pWarrior);
+            Py_DECREF(pInstructions);
+            return NULL;
+        }
         Py_DECREF(pInstruction);
     }
-    
-    PyObject_SetAttrString(pWarrior, "instructions", pInstructions);
-    Py_DECREF(pInstructions);
+
+    if (set_new_attr(pWarrior, "instructions", pInstructions) < 0) {
+        Py_DECREF(pWarrior);
+        return NULL;
+    }
 
     return pWarrior;
 }
@@ -375,10 +402,13 @@ Mars_fight(MarsObject *self, PyObject *args)
         pStartPos = PyObject_GetAttrString(pWarrior, "startPos");
 
         if (!pInstructionsArray || !PyList_Check(pInstructionsArray)) {
+            Py_XDECREF(pInstructionsArray);
+            Py_XDECREF(pStartPos);
             PyErr_SetString(PyExc_TypeError, "warrior.instructions must be a list.");
             return NULL;
         }
         if (!pStartPos || !PyLong_Check(pStartPos)) {
+            Py_XDECREF(pStartPos);
             Py_DECREF(pInstructionsArray);
             PyErr_SetString(PyExc_TypeError, "warrior.startPos must be an integer.");
             return NULL;

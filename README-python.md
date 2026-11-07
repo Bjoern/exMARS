@@ -5,7 +5,7 @@ AI-assisted addition; the C CLI and Ruby extension do not require Python.
 Build with `python -m pip install .`. On Windows with MinGW GCC and CPython's
 import library, `python build_fast.py --python-extension` writes into `bin`.
 The extension must match the running Python version/ABI and architecture.
-The tested configuration is CPython 3.14 x64 with MinGW GCC 16.1.0. The setuptools
+Tested configurations: CPython 3.14 and 3.15 x64 with MinGW GCC 16.1.0. The setuptools
 route selects C17 for MSVC or GNU C17 elsewhere; those toolchains need their own
 validation. For a helper build, set `PYTHONPATH` to the absolute `bin` directory
 before running the example (PowerShell: `$env:PYTHONPATH = (Resolve-Path bin).Path`).
@@ -25,7 +25,8 @@ min_distance. `Mars.standard(2)` and `Mars.tiny(2)` are convenience constructors
 `rounds` and `fixed_position` are writable. Each fight is a fresh match; P-space
 persists across rounds within that call. `warrior.pin = None` disables sharing;
 equal integer PINs share, including zero. Warrior objects expose instructions,
-startPos, name, authorName, fileName and pin. `scores()`,
+startPos, name, authorName, fileName and pin. Comment text that is not UTF-8
+(old Latin-1 warriors) is decoded with U+FFFD replacement characters. `scores()`,
 `wins(i, survivor_count)`, `losses(i)` and `results_str()` expose results.
 
 Run `python tests/python_bindings/run.py bin` for binding regressions.
