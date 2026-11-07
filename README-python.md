@@ -29,6 +29,15 @@ startPos, name, authorName, fileName and pin. Comment text that is not UTF-8
 (old Latin-1 warriors) is decoded with U+FFFD replacement characters. `scores()`,
 `wins(i, survivor_count)`, `losses(i)` and `results_str()` expose results.
 
+Errors raise exceptions and never end the process. `parse_string` and
+`parse_file` raise `ValueError` for code that does not assemble, including
+pMARS's limit of 9 distinct errors or warnings (the message starts with
+"too many errors or warnings"), `MemoryError` when memory runs out and
+`RuntimeError` for an internal assembler error. `fight()` raises `ValueError`
+for a warrior with no instructions or more than max_length, a start position
+outside it, or instruction data outside Warrior.py's numbering. The assembler
+still prints its errors and warnings to stdout/stderr.
+
 Run `python tests/python_bindings/run.py bin` for binding regressions.
 Safe early ties are enabled by default. Set `m.early_exit = False` for exact
 final core/queue state; scores and P-space are preserved in both modes.

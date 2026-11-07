@@ -8,7 +8,7 @@
 #include <limits.h>
 
 extern int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w);
-extern void check_sanity(mars_t* mars);
+extern const char* sanity_error(mars_t* mars);
 extern void clear_results(mars_t* mars);
 extern void save_pspaces(mars_t* mars);
 extern void amalgamate_pspaces(mars_t* mars);
@@ -348,7 +348,10 @@ VALUE mars_fight(int argc, VALUE* argv, VALUE self) {
         }
     }
     
-    check_sanity(mars);
+    {
+        const char *error = sanity_error(mars);  /* check_sanity() would exit() */
+        if (error) rb_raise(rb_eArgError, "%s", error);
+    }
     clear_results(mars);
     /* seed = mars->fixedPosition ? mars->fixedPosition - mars->minsep : rng((s32_t)((u32_t)time(0)*0x1d872b41UL)); */
     if (mars->fixedPosition) {

@@ -17,7 +17,7 @@
 // --- External Function Declarations ---
 extern int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w);
 extern int assemble_warrior_from_string(mars_t* mars, const char* redcode_string, warrior_struct* w);
-extern void check_sanity(mars_t* mars);
+extern const char* sanity_error(mars_t* mars);
 extern void clear_results(mars_t* mars);
 extern void save_pspaces(mars_t* mars);
 extern void amalgamate_pspaces(mars_t* mars);
@@ -46,6 +46,10 @@ typedef struct {
 
 /* pmars.c's tag for a warrior whose source declared PIN. */
 #define PIN_APPEARED -2
+/* Instruction.data ranges (Warrior.py's numbering): DAT..STP, F..I, $..}. */
+#define N_OPCODES 18
+#define N_MODIFIERS 7
+#define N_MODES 8
 /* Largest -F value pMARS accepts (MAXCORESIZE). */
 #define MAX_FIXED_POSITION ((INT_MAX >> 1) + 1)
 
@@ -291,6 +295,36 @@ create_python_warrior_from_c_struct(mars_t* mars, warrior_struct* w, const char*
 }
 
 
+// Helper: frees a warrior_struct the assembler filled (fully or after an error).
+static void
+free_c_warrior(warrior_struct *w)
+{
+    FREE(w->name);
+    FREE(w->version);
+    FREE(w->date);
+    FREE(w->authorName);
+    FREE(w->instBank);
+    FREE(w);
+}
+
+// Helper: raises the exception for a failed assembly. The assembler returns
+// PARSEERR (3) for code that does not assemble, also after too many errors,
+// MEMERR (-2) when memory ran out and SERIOUS (-1) for an internal error.
+static PyObject*
+raise_assembly_error(mars_t *mars, int code)
+{
+    size_t n = strlen(mars->errmsg);
+    while (n && (mars->errmsg[n - 1] == '\n' || mars->errmsg[n - 1] == ' ')) mars->errmsg[--n] = '\0';
+    if (code == -2)
+        PyErr_SetString(PyExc_MemoryError, n ? mars->errmsg : "out of memory while assembling");
+    else if (code < 0)
+        PyErr_SetString(PyExc_RuntimeError, n ? mars->errmsg : "internal assembler error");
+    else
+        PyErr_SetString(PyExc_ValueError, n ? mars->errmsg : "warrior does not assemble");
+    return NULL;
+}
+
+
 /*
  * Mars.parse_file(filename)
  */
@@ -301,6 +335,7 @@ Mars_parse_file(MarsObject *self, PyObject *args)
     mars_t* mars = self->mars;
     PyObject *pWarrior;
     char* fileName;
+    int code;
 
     if (!PyArg_ParseTuple(args, "s", &fileName)) {
         return NULL;
@@ -314,21 +349,10 @@ Mars_parse_file(MarsObject *self, PyObject *args)
     if (w == NULL) return PyErr_NoMemory();
     memset(w, 0, sizeof(warrior_struct));
     
-    if (assemble_warrior(mars, fileName, w)) {
-        PyErr_SetString(PyExc_ValueError, mars->errmsg);
-        FREE(w);
-        return NULL;
-    }
-    
-    pWarrior = create_python_warrior_from_c_struct(mars, w, fileName);
-
-    FREE(w->name);
-    FREE(w->version);
-    FREE(w->date);
-    FREE(w->authorName);
-    FREE(w->instBank);
-    FREE(w);
-    
+    code = assemble_warrior(mars, fileName, w);
+    pWarrior = code ? NULL : create_python_warrior_from_c_struct(mars, w, fileName);
+    free_c_warrior(w);
+    if (code) return raise_assembly_error(mars, code);
     return pWarrior;
 }
 
@@ -343,6 +367,7 @@ Mars_parse_string(MarsObject *self, PyObject *args)
     mars_t* mars = self->mars;
     const char* redcodeString;
     PyObject *pWarrior;
+    int code;
 
     if (!PyArg_ParseTuple(args, "s", &redcodeString)) {
         return NULL; 
@@ -356,21 +381,10 @@ Mars_parse_string(MarsObject *self, PyObject *args)
     if (w == NULL) return PyErr_NoMemory();
     memset(w, 0, sizeof(warrior_struct));
     
-    if (assemble_warrior_from_string(mars, redcodeString, w)) {
-        PyErr_SetString(PyExc_ValueError, mars->errmsg);
-        FREE(w);
-        return NULL;
-    }
-    
-    pWarrior = create_python_warrior_from_c_struct(mars, w, "from_string");
-
-    FREE(w->name);
-    FREE(w->version);
-    FREE(w->date);
-    FREE(w->authorName);
-    FREE(w->instBank);
-    FREE(w);
-    
+    code = assemble_warrior_from_string(mars, redcodeString, w);
+    pWarrior = code ? NULL : create_python_warrior_from_c_struct(mars, w, "from_string");
+    free_c_warrior(w);
+    if (code) return raise_assembly_error(mars, code);
     return pWarrior;
 }
 
@@ -414,11 +428,27 @@ Mars_fight(MarsObject *self, PyObject *args)
             return NULL;
         }
         
-        warrior->start = (u32_t)PyLong_AsLong(pStartPos);
-        warrior->len = (u32_t)PyList_Size(pInstructionsArray);
+        {
+            /* warrior->code holds maxWarriorLength instructions: check before copying. */
+            Py_ssize_t count = PyList_Size(pInstructionsArray);
+            long start = PyLong_AsLong(pStartPos);
+            Py_DECREF(pStartPos);
+            if (count < 1 || count > (Py_ssize_t) mars->maxWarriorLength) {
+                Py_DECREF(pInstructionsArray);
+                PyErr_Format(PyExc_ValueError, "warrior %d has %zd instructions; it must have 1..%u.",
+                             i, count, (unsigned) mars->maxWarriorLength);
+                return NULL;
+            }
+            if (start < 0 || start >= count) {
+                Py_DECREF(pInstructionsArray);
+                if (!PyErr_Occurred())
+                    PyErr_Format(PyExc_ValueError, "warrior %d: startPos must be 0..%zd.", i, count - 1);
+                return NULL;
+            }
+            warrior->start = (u32_t) start;
+            warrior->len = (u32_t) count;
+        }
         in = warrior->code;
-
-        Py_DECREF(pStartPos);
 
         /* warrior.pin: None (or absent) for no PIN; equal PINs share P-space. */
         warrior->have_pin = 0;
@@ -460,10 +490,21 @@ Mars_fight(MarsObject *self, PyObject *args)
             ma  = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 2));
             tmp = PyLong_AsLong(PyList_GetItem(pDataArray, 3));
             in->a = MODS(tmp, mars->coresize);
-            
+
             mb  = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 4));
             tmp = PyLong_AsLong(PyList_GetItem(pDataArray, 5));
             in->b = MODS(tmp, mars->coresize);
+
+            /* Numbering of Warrior.py: 18 opcodes, 7 modifiers, 8 addressing modes. */
+            if (PyErr_Occurred() || op < 0 || op >= N_OPCODES || m < 0 || m >= N_MODIFIERS ||
+                ma < 0 || ma >= N_MODES || mb < 0 || mb >= N_MODES) {
+                Py_DECREF(pDataArray);
+                Py_DECREF(pInstructionsArray);
+                PyErr_Clear();
+                PyErr_Format(PyExc_ValueError, "warrior %d, instruction %d: data must be integers "
+                             "(opcode 0..17, modifier 0..6, modes 0..7, two fields).", i, j);
+                return NULL;
+            }
 
             in->in = (flags << flPOS) | OP( op, m, ma, mb );
             ++in;
@@ -473,7 +514,13 @@ Mars_fight(MarsObject *self, PyObject *args)
         Py_DECREF(pInstructionsArray);
     }
     
-    check_sanity(mars);
+    {
+        const char *error = sanity_error(mars);  /* check_sanity() would exit() */
+        if (error) {
+            PyErr_SetString(PyExc_ValueError, error);
+            return NULL;
+        }
+    }
     clear_results(mars);
     
     if (mars->fixedPosition) {

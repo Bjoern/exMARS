@@ -9,6 +9,9 @@
  * Public Domain.
  */
 
+#include <setjmp.h>
+#include <stdio.h>
+
 
 /* global debug level */
 #ifndef DEBUG
@@ -250,6 +253,10 @@ typedef struct mars_st {
     int errorcode;
     int errorlevel;
     char errmsg[MAXALLCHAR];
+
+    /* Set while assembling: fatal parser errors jump here instead of exit(). */
+    jmp_buf *parseAbort;
+    FILE *parseFile;        /* source file open during assembly, closed on abort */
 
     /* Some parameters */
     int taskNum;

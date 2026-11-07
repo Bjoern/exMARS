@@ -223,6 +223,7 @@ void save_pspaces(mars_t* mars);
 void amalgamate_pspaces(mars_t* mars);
 void accumulate_results(mars_t* mars);
 void check_sanity(mars_t* mars);
+const char* sanity_error(mars_t* mars);
 void readargs(int argc, char** argv, mars_t* mars);
 void usage(void);
 void load_warriors(mars_t* mars);
@@ -299,7 +300,7 @@ char   *incompleteOpErr = "Incomplete operand at instruction '%s'";
 char   *redefinitionErr = "Ignored, redefinition of label '%s'";
 char   *undefinedLabelErr = "Undefined label '%s'";
 char   *assertionFailErr = "Assertion in this line fails";
-char   *tooManyMsgErr = "\nToo many errors or warnings.\nProgram aborted.\n";
+char   *tooManyMsgErr = "\nToo many errors or warnings.\nAssembly aborted.\n";
 char   *fileOpenErr = "Unable to open file '%s'";
 char   *fileReadErr = "Unable to read file '%s'";
 char   *notEnoughMemErr = "MALLOC() fails\nProgram aborted\n";
@@ -364,8 +365,29 @@ char   *permutateMultiWarrior = "\nPermutation cannot be used in multiwarrior ba
 
 /* ********************** macros + type definitions ********************** */
 
+/*
+ * Fatal assembler errors (internal logic error, out of memory, too many errors)
+ * used to call exit(), which killed any program embedding the assembler. Now
+ * they jump back to assemble_warrior()/assemble_warrior_from_string(), which
+ * free the parser's memory and return the code. Without a jump point (code
+ * calling the parser directly) they still exit as before.
+ */
+#define PARSE_ABORT_LOGIC  SERIOUS
+#define PARSE_ABORT_MEMORY MEMERR
+#define PARSE_ABORT_ERRORS PARSEERR
+
+static void parse_abort(mars_t *mars, int code)
+{
+    if (mars->parseAbort) {
+        mars->errorcode = code;
+        longjmp(*mars->parseAbort, 1);
+    }
+    exit(code == PARSE_ABORT_MEMORY ? MEMERR : PARSEERR);    /* the old exit codes */
+}
+
 #define LOGICERROR do { fprintf(STDOUT, logicErr, __FILE__, __LINE__);  \
-        exit(PARSEERR); } while(0)
+        snprintf(mars->errmsg, sizeof mars->errmsg, "internal assembler error (%s line %d)", __FILE__, __LINE__); \
+        parse_abort(mars, PARSE_ABORT_LOGIC); } while(0)
 
 #define MEMORYERROR errprn(mars, MLCERR, (line_st *) NULL, "")
 
@@ -1255,7 +1277,8 @@ errprn(mars_t* mars, errType code, line_st* aline, const char* arg)
     case MLCERR:
         cleanmem(mars);                        /* refresh memory for fprintf and system */
         fprintf(stderr, notEnoughMemErr);
-        exit(MEMERR);
+        strcpy(mars->errmsg, "out of memory while assembling");
+        parse_abort(mars, PARSE_ABORT_MEMORY);
         break;
     }
 
@@ -1299,7 +1322,8 @@ errprn(mars_t* mars, errType code, line_st* aline, const char* arg)
     if (mars->ierr >= ERRMAX) {
         sprintf(mars->outs, tooManyMsgErr);
         textout(mars->outs);
-        exit(PARSEERR);
+        snprintf(mars->errmsg, sizeof mars->errmsg, "too many errors or warnings (%d); the last one: %.180s", ERRMAX, abuf);
+        parse_abort(mars, PARSE_ABORT_ERRORS);
     }
     strcpy(mars->errmsg, abuf);
 }
@@ -2288,7 +2312,7 @@ void encode_warrior(mars_t* mars, warrior_struct* w, uShrt sspnt)
 
 
 
-int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w)
+static int assemble_file(mars_t* mars, char* fName, warrior_struct* w)
 {
     FILE   *infp;
     uChar   cont = TRUE, conLine = FALSE, i;
@@ -2340,8 +2364,10 @@ int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w)
         if (*fName == '\0') {
             infp = stdin;
             pstart = stdinstart;
-        } else
+        } else {
             pstart = 0;
+            mars->parseFile = infp;        /* closed by parse_abort_cleanup() on an abort */
+        }
 
         lines = 0;
         mars->aline = NULL;
@@ -2368,6 +2394,7 @@ int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w)
                         conLine = FALSE;
                 } else if (ferror(infp)) {
                     errprn(mars, DSKERR, (line_st *) NULL, fName);
+                    mars->parseFile = NULL;
                     fclose(infp);
                     return PARSEERR;
                 } else
@@ -2412,9 +2439,10 @@ int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w)
         if (pstart)
             pstart--;
 
-        if (*fName)
+        if (*fName) {
+            mars->parseFile = NULL;
             fclose(infp);
-        else
+        } else
             stdinstart = pstart;        /* save value for next stdin reference */
 
         mars->line = 0;
@@ -2745,7 +2773,9 @@ s32_t compute_positions(s32_t seed, mars_t* mars)
     return seed;
 }
 
-void check_sanity(mars_t* mars)
+/* NULL when the loaded warriors can be fought, else why not (also left in
+ * mars->errmsg). For library callers, which must not exit(). */
+const char* sanity_error(mars_t* mars)
 {
     u32_t space_used;
     unsigned int i;
@@ -2754,7 +2784,7 @@ void check_sanity(mars_t* mars)
     for (i=0; i<mars->nWarriors; i++) {
         if (mars->warriors[i].len == 0) {
             sprintf(mars->errmsg,"warrior %d has no code\n", i);
-            panic(mars->errmsg);
+            return mars->errmsg;
         }
     }
 
@@ -2766,15 +2796,25 @@ void check_sanity(mars_t* mars)
     /* Make sure minsep dominates the lengths of all warriors. */
     for (i=0; i<mars->nWarriors; i++) {
         if ( mars->minsep < mars->warriors[i].len ) {
-            panic("minimum separation must be >= longest warrior\n");
+            strcpy(mars->errmsg, "minimum separation must be >= longest warrior\n");
+            return mars->errmsg;
         }
     }
 
     /* Make sure there is space for all warriors to be loaded. */
     space_used = mars->nWarriors*mars->minsep;
     if ( space_used > mars->coresize ) {
-        panic("warriors too large to fit into core\n");
+        strcpy(mars->errmsg, "warriors too large to fit into core\n");
+        return mars->errmsg;
     }
+    return NULL;
+}
+
+/* The command-line tool's check: exits with the message. */
+void check_sanity(mars_t* mars)
+{
+    const char *error = sanity_error(mars);
+    if (error) panic(error);
 }
 
 
@@ -3083,7 +3123,7 @@ int main(int argc, char** argv) {
  */
 #include <string.h> // Make sure this is at the top of pmars.c
 
-int assemble_warrior_from_string(mars_t* mars, const char* redcode_string, warrior_struct* w)
+static int assemble_string(mars_t* mars, const char* redcode_string, warrior_struct* w)
 {
     /* Most setup is copied directly from assemble_warrior */
     uChar   cont = TRUE, conLine = FALSE, i;
@@ -3253,5 +3293,66 @@ int assemble_warrior_from_string(mars_t* mars, const char* redcode_string, warri
         mars->errorcode = SUCCESS;
     reset_regs(mars);
     return (mars->errorcode);
+}
+
+/* After a parse_abort(): free what the parser held and report the code. The
+ * warrior keeps its name/author/date/version strings, as after any failed
+ * assembly; the caller frees them. mars->errmsg says what went wrong. */
+static int parse_abort_cleanup(mars_t* mars, warrior_struct* w, int code)
+{
+    if (mars->parseFile) {
+        fclose(mars->parseFile);
+        mars->parseFile = NULL;
+    }
+    cleanmem(mars);
+    while (mars->srctbl) {
+        src_st *tmp = mars->srctbl;
+        mars->srctbl = mars->srctbl->nextsrc;
+        FREE(tmp->src);
+        FREE(tmp);
+    }
+    FREE(w->instBank);
+    w->instLen = 0;
+    mars->ierr = 0;
+    mars->errorcode = code;
+    reset_regs(mars);
+    return code;
+}
+
+/*
+ * The public entry points. They return SUCCESS (0) or an error code:
+ * PARSEERR for a warrior that does not assemble (also after too many errors),
+ * MEMERR when memory ran out, SERIOUS for an internal error. They never exit().
+ */
+int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w)
+{
+    jmp_buf here;
+    jmp_buf *outer = mars->parseAbort;
+    int code;
+
+    mars->parseAbort = &here;
+    mars->parseFile = NULL;
+    if (setjmp(here) == 0)
+        code = assemble_file(mars, fName, w);
+    else
+        code = parse_abort_cleanup(mars, w, mars->errorcode);
+    mars->parseAbort = outer;
+    return code;
+}
+
+int assemble_warrior_from_string(mars_t* mars, const char* redcode_string, warrior_struct* w)
+{
+    jmp_buf here;
+    jmp_buf *outer = mars->parseAbort;
+    int code;
+
+    mars->parseAbort = &here;
+    mars->parseFile = NULL;
+    if (setjmp(here) == 0)
+        code = assemble_string(mars, redcode_string, w);
+    else
+        code = parse_abort_cleanup(mars, w, mars->errorcode);
+    mars->parseAbort = outer;
+    return code;
 }
 

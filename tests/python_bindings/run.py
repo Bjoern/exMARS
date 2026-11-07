@@ -9,6 +9,8 @@ bin/generic. Checks:
     so reusing one instance gives the results of a fresh instance per fight;
   * equal PINs share P-space;
   * fixed_position reproduces the CLI's -F placements (seed 0 included);
+  * parsing does not leak, and errors raise exceptions instead of ending the
+    process (too many assembly errors, invalid warriors passed to fight());
   * with --hills: a sample of '94nop and P-space hill pairs gives the same
     wins/ties on one reused instance, fresh instances, the CLI (default
     BIN_DIR/exmars-fast.exe) and, with --pmars, pMARS.
@@ -151,6 +153,73 @@ with tempfile.TemporaryDirectory() as tmp:
         check("non-UTF-8 name parses", m.parse_file(path).name, "Caf�")
     except Exception as error:
         check("non-UTF-8 name parses", repr(error), "Caf�")
+
+
+def outcome(call):
+    try:
+        call()
+        return "accepted"
+    except Exception as error:
+        return type(error).__name__
+
+
+# pMARS gives up after 9 distinct errors or warnings. The assembler used to exit()
+# there, which killed the Python process; now it raises ValueError and the same
+# instance keeps working.
+TOO_MANY = "".join(f"xyz{i} {i}\n" for i in range(12))
+m = Mars.Mars(2, 8000, 80000, 8000, 100, 100)
+devnull, saved = os.open(os.devnull, os.O_WRONLY), (os.dup(1), os.dup(2))
+sys.stdout.flush(); sys.stderr.flush()
+os.dup2(devnull, 1); os.dup2(devnull, 2)          # the assembler prints each error
+try:
+    too_many = outcome(lambda: m.parse_string(TOO_MANY))
+    try:
+        m.parse_string(TOO_MANY)
+    except ValueError as error:
+        message = str(error)
+    with tempfile.TemporaryDirectory() as tmp:     # removing it fails if the file stayed open
+        path = os.path.join(tmp, "too_many.red")
+        with open(path, "w") as f:
+            f.write(TOO_MANY)
+        too_many_file = outcome(lambda: m.parse_file(path))
+    gc.collect()
+    before = sys.getallocatedblocks()
+    for _ in range(300):
+        outcome(lambda: m.parse_string(TOO_MANY))
+    gc.collect()
+    abort_growth = sys.getallocatedblocks() - before
+    after = m.parse_string(";assert 1\nmov.i 0, 1\n")
+finally:
+    sys.stdout.flush(); sys.stderr.flush()
+    os.dup2(saved[0], 1); os.dup2(saved[1], 2)
+    for fd in (*saved, devnull):
+        os.close(fd)
+check("too many errors: parse_string raises", too_many, "ValueError")
+check("too many errors: message", message.startswith("too many errors or warnings"), True)
+check("too many errors: parse_file raises and closes the file", too_many_file, "ValueError")
+check("too many errors: repeated aborts do not leak", "flat" if abort_growth < 100 else f"+{abort_growth}", "flat")
+check("too many errors: the instance still assembles", len(after.instructions), 1)
+
+# fight() checks what Python hands it: warrior->code holds maxWarriorLength
+# instructions, and an empty warrior used to reach check_sanity()'s exit().
+m = Mars.Mars(2, 80, 800, 80, 5, 5)
+good = m.parse_string(";assert 1\nmov.i 0, 1\n")
+
+
+def warrior(instructions, start=0):
+    w = m.parse_string(";assert 1\nmov.i 0, 1\n")
+    w.instructions, w.startPos = instructions, start
+    return w
+
+
+ins = good.instructions[0]
+bad_opcode = m.parse_string(";assert 1\nmov.i 0, 1\n")
+bad_opcode.instructions[0].data = [99, 0, 0, 0, 0, 1]
+check("fight: no instructions", outcome(lambda: m.fight(warrior([]), good)), "ValueError")
+check("fight: more than max length", outcome(lambda: m.fight(warrior([ins] * 6), good)), "ValueError")
+check("fight: startPos out of range", outcome(lambda: m.fight(warrior([ins], 1), good)), "ValueError")
+check("fight: opcode out of range", outcome(lambda: m.fight(bad_opcode, good)), "ValueError")
+check("fight: still works afterwards", outcome(lambda: m.fight(warrior([ins] * 5), good)), "accepted")
 
 if args.hills:
     for suite in ("94top50", "psptop50"):
