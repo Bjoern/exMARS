@@ -40,7 +40,7 @@ to `python3 wasm/build.py`. Supply that revision's source, not the optimized for
 | `bench-original-exmars.mjs` | Actual original upstream simulator, including known bugs |
 | `bench-pmars.mjs` | pMARS simulator with deterministic benchmark placements |
 | `fighter.mjs` | Persistent two-warrior fighter (`wasm/fighter.c` + `sim.c` + `pspace.c`, no parser) |
-| `assembler.mjs` | Redcode to instruction tuples (`wasm/assembler.c` + pMARS parser), instances retired after an `exit()` or when grown |
+| `assembler.mjs` | Redcode to instruction tuples (`wasm/assembler.c` + pMARS parser), one instance per realm, retired only after a trap or when grown |
 
 Each generated module has a same-named `.wasm` companion. The reference module
 is a corrected baseline, not original upstream. `earlyExit: false` disables early
@@ -155,13 +155,17 @@ f.dispose();
   truncation, comparisons and `&& ||` giving 0/1, unary `+ - !`, and registers
   `W` and `S` (other letters are 0). Deaths score nothing.
 - `assemble(source, hill, {rounds})` runs the pMARS parser in an assembler
-  instance shared by the calls of a page, Worker or process. The parser can
-  `exit()` (more than `ERRMAX` = 9 errors, out of memory) and `assembler.c`
-  doesn't free a call's buffers, so the client replaces the instance after an
-  `exit()` or a trap and once its memory has grown past 32 MiB. (A new instance
-  per call meant a new wasm memory per warrior, which browsers free only when
-  that Worker's garbage collector runs; Workers assembling thousands of
-  warriors ran out of memory.) The `.wasm` is compiled once per realm.
+  instance shared by the calls of a page, Worker or process. The parser returns
+  its fatal errors (more than `ERRMAX` = 9 errors, out of memory) as
+  `{ok: false}` instead of calling `exit()`, and `assembler.c` frees each call's
+  memory. As a safeguard the client still replaces the instance after a trap (or
+  an `exit()` of an older build) and once its memory has grown past 32 MiB. (A
+  new instance per call meant a new wasm memory per warrior, which browsers free
+  only when that Worker's garbage collector runs; Workers assembling thousands
+  of warriors ran out of memory.) The `.wasm` is compiled once per realm.
+  `fighter-client.mjs` passes its own URL query (a site's `?v=` release) on to
+  the `.mjs` and `.wasm` files it loads, so a browser never pairs a cached old
+  `.mjs` with a new `.wasm` after an update.
   `CORESIZE`, `MAXLENGTH`, `PSPACESIZE`
   and the other predefined constants and `;assert` follow `hill`. `ROUNDS`
   is the optional `rounds` (default 1, as the Python binding). `warnings` is an

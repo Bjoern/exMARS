@@ -118,6 +118,7 @@ void sim_free_bufs(void* m)
     free(mars->startPositions);
     free(mars->warriors);
     free(mars->warTab);
+    free(mars->errkeep);    /* the assembler's error table (pmars.c), if it ran */
     free(mars);
 }
 

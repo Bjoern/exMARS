@@ -19,8 +19,13 @@ const MAX_WARRIORS = 36;                     // pMARS MAXWARRIOR
 const MAX_FIXED_POSITION = 2 ** 30;          // pMARS MAXCORESIZE, the largest -F
 const factories = new Map();
 
+// This module's own query (a site's ?v=<release>), passed on to the .mjs and .wasm
+// files it loads. Each Emscripten .mjs works only with the .wasm built with it, so a
+// browser must not combine a cached old one with a new one after an update.
+const VERSION = new URL(import.meta.url).search;
+
 function factory(name) {
-  if (!factories.has(name)) factories.set(name, import(`./${name}.mjs`).then(m => m.default));
+  if (!factories.has(name)) factories.set(name, import(`./${name}.mjs${VERSION}`).then(m => m.default));
   return factories.get(name);
 }
 
@@ -29,9 +34,10 @@ function factory(name) {
 const compiledModules = new Map();
 
 async function compileWasm(name) {
-  const url = new URL(`./${name}.wasm`, import.meta.url);
+  const url = new URL(`./${name}.wasm${VERSION}`, import.meta.url);
   if (url.protocol === 'file:') {
     const {readFile} = await import('node:fs/promises');
+    url.search = '';
     return WebAssembly.compile(await readFile(url));
   }
   if (typeof WebAssembly.compileStreaming === 'function') {
@@ -65,11 +71,11 @@ async function freshInstance(name, options) {
   }})]);
 }
 
-// The assembler instance assemble() calls, one per realm. The pMARS parser can run
-// many times in one process (the Python binding does), but assembler.c never frees
-// a call's buffers, the parser can exit(), and wasm memory never shrinks. So an
-// instance is retired once its memory has grown past ASSEMBLER_MEMORY_LIMIT, and at
-// once after an exit() or a trap. A fresh instance per call, as before, made a new
+// The assembler instance assemble() calls, one per realm. The parser returns its
+// errors instead of calling exit() and assembler.c frees each call's memory, so one
+// instance serves any number of calls. As a safeguard (older builds did both, and
+// wasm memory never shrinks) an instance is still retired once its memory has grown
+// past ASSEMBLER_MEMORY_LIMIT, and at once after an exit() or a trap. A fresh instance per call, as before, made a new
 // wasm memory per warrior: browsers free those only when that realm's garbage
 // collector runs, so Workers assembling many warriors (an evolver) ran out of
 // memory (Edge: "Cannot allocate Wasm memory for new instance", or a crashed tab).
@@ -139,8 +145,8 @@ function splitDiagnostics(lines) {
 
 /**
  * Assembles one Redcode source for a hill. The assembler instance is shared by
- * the calls of a realm and replaced after an exit() or a trap of the pMARS parser
- * and when its memory has grown (see ASSEMBLER_MEMORY_LIMIT); everything a call
+ * the calls of a realm and replaced only after a trap (or an exit() of an older
+ * build) or when its memory has grown (see ASSEMBLER_MEMORY_LIMIT); everything a call
  * returns is read before the next call can run.
  * Options: rounds (default 1, as the Python binding) sets the ROUNDS constant.
  */

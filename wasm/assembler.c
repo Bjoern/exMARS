@@ -1,10 +1,11 @@
 /* assembler.c: in-memory assembly entry point for the WebAssembly build.
  *
  * Linked with pmars.c (GPL-2.0-or-later parser), sim.c and pspace.c into
- * assembler.mjs. The pMARS parser can exit() (too many errors, out of memory,
- * logic errors), so the JS wrapper runs each call in a fresh, throwaway
- * instance and never in the persistent fighter. Diagnostics are printed to
- * stderr by the parser; the wrapper captures them.
+ * assembler.mjs. The parser returns its fatal errors (too many errors, out of
+ * memory, logic errors) instead of calling exit(), and each call frees what it
+ * allocated, so one instance can assemble any number of warriors. It is still
+ * kept apart from the persistent fighter. Diagnostics are printed to stderr by
+ * the parser; the wrapper captures them.
  *
  * ex_assemble(source, coreSize, cycles, processes, maxLength, minDistance, rounds)
  * returns 0 when the source assembled into a loadable warrior, 1 when the
@@ -58,14 +59,51 @@ static char *copy_string(const char *s)
     return c;
 }
 
+/* Frees a call's simulator and warrior. (Both used to be kept, so an instance's
+ * memory grew with every warrior.) */
+static void free_call(mars_t *mars, warrior_struct *w)
+{
+    if (w) {
+        free(w->name);
+        free(w->version);
+        free(w->date);
+        free(w->authorName);
+        free(w->instBank);
+        free(w);
+    }
+    if (mars) {
+        if (mars->warriors) sim_free_bufs(mars);   /* also frees mars and its error table */
+        else { free(mars->errkeep); free(mars); }
+    }
+}
+
+static int assemble_call(mars_t *mars, warrior_struct *w, const char *source, int coreSize,
+                         int cycles, int processes, int maxLength, int minDistance, int rounds);
+
 EX_EXPORT int ex_assemble(const char *source, int coreSize, int cycles, int processes,
                           int maxLength, int minDistance, int rounds)
 {
     mars_t *mars;
     warrior_struct *w;
+    int status;
+
+    /* The previous call's results were read by now. */
+    free(result); result = NULL;
+    free(name); name = NULL;
+    free(author); author = NULL;
+    message[0] = '\0';
+    mars = (mars_t *)calloc(1, sizeof(mars_t));
+    w = (warrior_struct *)calloc(1, sizeof(warrior_struct));
+    status = assemble_call(mars, w, source, coreSize, cycles, processes, maxLength, minDistance, rounds);
+    free_call(mars, w);
+    return status;
+}
+
+static int assemble_call(mars_t *mars, warrior_struct *w, const char *source, int coreSize,
+                         int cycles, int processes, int maxLength, int minDistance, int rounds)
+{
     int i, status = 0;
 
-    message[0] = '\0';
     if (!source || coreSize < 1 || coreSize > 65535 || cycles < 1 || processes < 1 ||
         maxLength < 1 || minDistance < 1 || maxLength > minDistance ||
         (long)minDistance * 2 > coreSize || rounds < 1) {
@@ -74,8 +112,6 @@ EX_EXPORT int ex_assemble(const char *source, int coreSize, int cycles, int proc
     }
     /* Configured as python_mars.c Mars_init(2, ...), so CORESIZE, MAXLENGTH,
      * PSPACESIZE, ... and ;assert evaluate as they do for the hill. */
-    mars = (mars_t *)calloc(1, sizeof(mars_t));
-    w = (warrior_struct *)calloc(1, sizeof(warrior_struct));
     if (!mars || !w) {
         snprintf(message, sizeof(message), "out of memory");
         return -2;
@@ -92,6 +128,8 @@ EX_EXPORT int ex_assemble(const char *source, int coreSize, int cycles, int proc
     mars->errorcode = SUCCESS;
     mars->errorlevel = WARNING;
     if (!sim_alloc_bufs(mars)) {
+        /* sim_free_bufs is unsafe after a partial allocation (see fighter.c): leak those. */
+        mars->warriors = NULL;
         snprintf(message, sizeof(message), "sim_alloc_bufs failed");
         return -2;
     }
