@@ -10,6 +10,7 @@ compiler and the build commands) for corewar.dev to vendor with pinned hashes.
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import zipfile
@@ -46,17 +47,31 @@ def main():
     build, release = a.build.resolve(), a.release.resolve()
     manifest = json.loads((build / 'manifest.json').read_text())
     release.mkdir(parents=True, exist_ok=True)
+    # Text files get LF line ends, as Git stores them, so the hashes below are the
+    # same whichever OS made the release (a Windows checkout and emcc write CRLF).
     for name in FILES:
-        shutil.copy2(build / name, release / name)
+        data = (build / name).read_bytes()
+        if not name.endswith('.wasm'):
+            data = data.replace(b'\r\n', b'\n')
+        (release / name).write_bytes(data)
 
     copying = a.copying
     if copying is None:
         candidate = build / 'sources/pmars/COPYING'
         copying = candidate if candidate.is_file() else None
-    entries = [(name, (ROOT / name).read_bytes()) for name in SOURCES]
+    # Sources as committed at HEAD (the commit the manifest names), not the working tree.
+    def committed(name):
+        return subprocess.run(['git', '-C', str(ROOT), 'show', 'HEAD:' + name], capture_output=True, check=True).stdout
+
+    dirty = subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *SOURCES],
+                           capture_output=True, text=True, check=True).stdout.strip()
+    if dirty:
+        raise SystemExit('Commit the sources first; uncommitted changes:\n' + dirty)
+    sources = {name: committed(name) for name in SOURCES}
+    entries = list(sources.items())
     entries.append(('NOTICE', NOTICE.encode()))
     if copying:
-        entries.append(('COPYING', Path(copying).read_bytes()))
+        entries.append(('COPYING', Path(copying).read_bytes().replace(b'\r\n', b'\n')))
     with zipfile.ZipFile(release / ZIP_NAME, 'w', zipfile.ZIP_DEFLATED) as z:
         for name, data in sorted(entries):
             info = zipfile.ZipInfo('exmars-fighter-src/' + name, date_time=(1980, 1, 1, 0, 0, 0))
@@ -65,7 +80,12 @@ def main():
             z.writestr(info, data)
 
     def relative(text):
-        return text.replace(str(ROOT) + '/', '').replace(str(ROOT), '.')
+        """Portable form of a build argument: paths relative to the repository, with /."""
+        text = text.replace(str(ROOT) + os.sep, '').replace(str(ROOT), '.')
+        if Path(text).name.lower() in ('emcc', 'emcc.bat', 'emcc.py'):
+            return 'emcc'
+        text = text.replace('\\', '/')
+        return text[2:] if text.startswith('./') else text
 
     commands = [[relative(c) for c in cmd] for cmd in manifest['commands']
                 if any(Path(c).stem in ('fighter', 'assembler') for c in cmd)]
@@ -74,9 +94,9 @@ def main():
         'compiler': manifest['compiler'].splitlines()[0],
         'builtFromParentCommit': head or None,
         'commands': commands,
-        'sources': {name: sha(ROOT / name) for name in SOURCES},
+        'sources': {name: hashlib.sha256(data).hexdigest() for name, data in sources.items()},
         'files': {name: sha(release / name) for name in FILES + [ZIP_NAME]},
-    }, indent=2) + '\n')
+    }, indent=2) + '\n', newline='\n')
     for name in FILES + [ZIP_NAME, 'manifest.json']:
         print(sha(release / name), name)
 
