@@ -52,14 +52,14 @@ def build_api(name, sources, exports, exit_runtime, defines=()):
          '-sEXPORTED_RUNTIME_METHODS=["HEAPU8","HEAP32","UTF8ToString"]', '-o', out / (name + '.mjs')])
 
 h = ROOT / 'benchmarks/comparison'
-# Persistent fighter: sim.c + pspace.c only, so the pMARS parser's exit paths are absent.
-build_api('fighter', [ROOT / 'wasm/fighter.c', ROOT / 'sim.c', ROOT / 'pspace.c'],
+# Persistent fighter: sim.c, pspace.c and match.c only, so the pMARS parser's exit paths are absent.
+build_api('fighter', [ROOT / 'wasm/fighter.c', ROOT / 'sim.c', ROOT / 'pspace.c', ROOT / 'match.c'],
           ['ex_configure', 'ex_load', 'ex_unload', 'ex_fight', 'ex_fight_exact', 'ex_fight_many', 'ex_set_early_exit', 'ex_error'], 0)
 # Assembler: kept apart from the fighter. Its parser returns errors instead of exiting.
-build_api('assembler', [ROOT / 'wasm/assembler.c', ROOT / 'pmars.c', ROOT / 'sim.c', ROOT / 'pspace.c'],
+build_api('assembler', [ROOT / 'wasm/assembler.c', ROOT / 'pmars.c', ROOT / 'sim.c', ROOT / 'pspace.c', ROOT / 'match.c'],
           ['ex_assemble', 'ex_result', 'ex_name', 'ex_author', 'ex_message'], 1, ['-Dmain=exmars_cli_main'])
 for name, defines in [('exmars', []), ('reference-exmars', ['-DEXMARS_REFERENCE'])]:
-    build(name, ROOT, [ROOT / f for f in ['pmars.c', 'sim.c', 'pspace.c']], defines)
+    build(name, ROOT, [ROOT / f for f in ['pmars.c', 'sim.c', 'pspace.c', 'match.c']], defines)
 for name, defines in [('optimized-exmars', ['-DEARLY=1']), ('exact-exmars', ['-DEARLY=0'])]:
     build('bench-' + name, ROOT, [h / 'exhaust_adapter.c', ROOT / 'sim.c', ROOT / 'pspace.c'], ['-DEXMARS', *defines])
 original = a.original_source

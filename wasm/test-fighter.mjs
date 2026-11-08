@@ -97,7 +97,10 @@ for (const name of available) {
 }
 if (!havePmars) skip('pMARS comparisons (build with PMARS_SOURCE)');
 
-// --- 2. Exact = sum of single rounds = pMARS permutation mode --------------
+// --- 2. Exact = pMARS permutation mode (-P) = sum of single rounds -----------
+// One match, so P-space persists between rounds and the -F seed fixes the order;
+// without P-space the order doesn't matter and exact = sum of one-round fights.
+const usesPspace = w => /\b(ldp|stp)\b/i.test(w.source);
 for (const name of ['nano', 'tiny'].filter(n => corpora[n])) {
   const {hill} = HILLS[name], {coreSize: c, minDistance: d} = hill;
   const rounds = 2 * (c - 2 * d + 1);
@@ -106,8 +109,10 @@ for (const name of ['nano', 'tiny'].filter(n => corpora[n])) {
   for (let i = 0; i < pairs; i++) {
     const A = pick(fightable[name]), B = pick(fightable[name]);
     const ha = f.load(await asm(name, A)), hb = f.load(await asm(name, B));
-    const exact = f.exact(ha, hb);
+    const position = d + (7 * i + 3) % (c - 2 * d + 1);   // no rand(): keeps the cases later sections draw
+    const exact = f.exact(ha, hb, {position});
     assert.equal(exact.rounds, rounds);
+    if (!usesPspace(A) && !usesPspace(B)) assert.deepEqual(exact, f.exact(ha, hb), 'exact order-independent without P-space');
     assert.equal(exact.wins + exact.ties + exact.losses, rounds);
     const sum = [0, 0, 0];
     for (let p = d; p <= c - d; p++) {
@@ -115,9 +120,10 @@ for (const name of ['nano', 'tiny'].filter(n => corpora[n])) {
       const back = triple(f.fight(hb, ha, {rounds: 1, position: (c - p) % c}));
       sum[0] += fwd[0] + back[2]; sum[1] += fwd[1] + back[1]; sum[2] += fwd[2] + back[0];
     }
-    assert.deepEqual(triple(exact), sum, `${name} exact vs single rounds ${A.file} ${B.file}`);
+    if (!usesPspace(A) && !usesPspace(B))
+      assert.deepEqual(triple(exact), sum, `${name} exact vs single rounds ${A.file} ${B.file}`);
     if (havePmars) {
-      const r = await runCLI('pmars', ['-b', '-k', '-P', '-r', '' + rounds, '-s', '' + c, '-c', '' + hill.cycles,
+      const r = await runCLI('pmars', ['-b', '-k', '-P', '-F', '' + position, '-s', '' + c, '-c', '' + hill.cycles,
         '-p', '' + hill.processes, '-l', '' + hill.maxLength, '-d', '' + d, 'a.red', 'b.red'],
         {'a.red': A.source, 'b.red': B.source});
       assert.equal(r.exitCode, 0, r.stderr);
@@ -128,7 +134,7 @@ for (const name of ['nano', 'tiny'].filter(n => corpora[n])) {
     f.unload(ha); f.unload(hb);
   }
   f.dispose();
-  console.log(`ok ${name}: exact (${rounds} rounds) = sum of single rounds${havePmars ? ' = pMARS -P' : ''}, ${pairs} pairs`);
+  console.log(`ok ${name}: exact (${rounds} rounds)${havePmars ? ' = pMARS -P -F' : ''} = sum of single rounds without P-space, ${pairs} pairs`);
 }
 
 // --- 3. Reuse: one instance = fresh instance per call ----------------------
@@ -168,7 +174,7 @@ const standardHill = HILLS.standard.hill;
     if (roll < 3) {   // melee: 3..6 warriors (repeats allowed), mixed into the same instance
       const list = Array.from({length: 3 + rand(4)}, () => rand(ws.length));
       plan.push({nano, a, b, many: list, rounds: 1 + rand(nano ? 12 : 3), position: rand(4) ? hill.minDistance + rand(4 * hill.coreSize) : null});
-    } else if (nano && roll < 9) plan.push({nano, a, b, exact: true});
+    } else if (nano && roll < 9) plan.push({nano, a, b, exact: true, position: hill.minDistance + i % (hill.coreSize - 2 * hill.minDistance + 1)});
     else plan.push({nano, a, b, rounds: 1 + rand(nano ? 12 : 5), position: rand(4) ? legal(hill) : null});
   }
   // Random placements (position 0) differ per instance, so compare those by round count only.
@@ -208,12 +214,13 @@ const standardHill = HILLS.standard.hill;
       compared++; manyCompared++;
       continue;
     }
-    const got = step.exact ? f.exact(handles[step.a], handles[step.b])
+    const got = step.exact ? f.exact(handles[step.a], handles[step.b], {position: step.position})
       : f.fight(handles[step.a], handles[step.b], {rounds: step.rounds, position: step.position ?? 0});
     if (step.position === null && !step.exact) { assert.equal(got.wins + got.ties + got.losses, step.rounds); continue; }
     const fresh = await createFighter(hill);
     const fa = fresh.load(ws[step.a].asm), fb = fresh.load(ws[step.b].asm);
-    const want = step.exact ? fresh.exact(fa, fb) : fresh.fight(fa, fb, {rounds: step.rounds, position: step.position});
+    const want = step.exact ? fresh.exact(fa, fb, {position: step.position})
+      : fresh.fight(fa, fb, {rounds: step.rounds, position: step.position});
     fresh.dispose();
     assert.deepEqual(got, want, `reuse step ${i} ${JSON.stringify(step)}`);
     compared++;

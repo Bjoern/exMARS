@@ -20,12 +20,12 @@ ROOT = Path(__file__).resolve().parents[1]
 FILES = ['fighter.mjs', 'fighter.wasm', 'assembler.mjs', 'assembler.wasm', 'fighter-client.mjs']
 # Everything compiled into fighter.wasm/assembler.wasm, plus the wrapper and build scripts.
 SOURCES = ['wasm/fighter.c', 'wasm/assembler.c', 'wasm/fighter-client.mjs', 'wasm/build.py', 'wasm/release.py',
-           'wasm/README.md', 'pmars.c', 'sim.c', 'sim_loop.inc', 'pspace.c', 'exhaust.h', 'sim.h', 'insn.h',
+           'wasm/README.md', 'pmars.c', 'sim.c', 'sim_loop.inc', 'pspace.c', 'match.c', 'match.h', 'exhaust.h', 'sim.h', 'insn.h',
            'insn_help.h', 'pspace.h', 'hill_config.h', 'Warrior.py', 'README.md']
 ZIP_NAME = 'exmars-fighter-src.zip'
 NOTICE = """exMARS persistent fighter and assembler for WebAssembly: corresponding source.
 
-fighter.wasm is built from wasm/fighter.c, sim.c and pspace.c (exhaust by
+fighter.wasm is built from wasm/fighter.c, sim.c, pspace.c and match.c (exhaust by
 M Joonas Pihlaja, public domain, and the exMARS fork's changes).
 assembler.wasm additionally contains pmars.c, the pMARS parser, which is
 GPL-2.0-or-later (see the notice at the top of pmars.c and COPYING, when included).

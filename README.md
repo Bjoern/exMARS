@@ -44,6 +44,11 @@ its branch and publication notes describe that preparation stage.
 - [Python bindings](README-python.md): the added CPython extension,
   Warrior/Instruction helpers, in-memory assembly, API examples, and build
   and test instructions.
+- One round loop for all front ends (`match.c`): the CLI, Python, Ruby and
+  Wasm share placements, starting order and P-space handling, including
+  pMARS's permutation mode (`-P`: every placement in both starting orders,
+  as hills such as nano score) as the CLI's `-P`, `permutate` in Python and
+  Ruby, and `exact()` in Wasm.
 - [Performance changes](README-performance.md): MOV.I shortcuts, cached
   two-warrior process queues, DAT-count early termination, and optional
   builds specialized for fixed hill settings.

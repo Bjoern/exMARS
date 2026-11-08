@@ -221,6 +221,59 @@ check("fight: startPos out of range", outcome(lambda: m.fight(warrior([ins], 1),
 check("fight: opcode out of range", outcome(lambda: m.fight(bad_opcode, good)), "ValueError")
 check("fight: still works afterwards", outcome(lambda: m.fight(warrior([ins] * 5), good)), "accepted")
 
+# permutate (pMARS -P): every (position, starting warrior) pair once, P-space
+# kept between the rounds of the match; handles from load() fight like objects.
+m = Mars.Mars(2, 80, 800, 80, 5, 5)
+check("permutations (nano)", m.permutations, 142)
+bomber = m.parse_string(";assert 1\nadd.ab #13, 2\nmov.i 2, @1\njmp -2\ndat 0, 0\n")
+paper = m.parse_string(";assert 1\nspl 0\nmov.i -1, 7\njmp -1\n")
+m.permutate = True
+m.rounds = m.permutations
+m.fixed_position = 17
+permuted = rows(m.fight(bomber, paper))
+m.permutate = False
+m.rounds = 1
+w = t = 0
+for p in range(5, 76):
+    m.fixed_position = p
+    m.fight(bomber, paper)
+    w, t = w + m.wins(0, 1), t + m.wins(0, 2)
+    m.fight(paper, bomber)
+    w, t = w + m.wins(1, 1), t + m.wins(1, 2)
+check("permutate = every placement in both orders", permuted[0], f"{w} {t}")
+files = [os.path.join(tempfile.gettempdir(), f"exmars_perm_{k}.red") for k in (0, 1)]
+for f, src in zip(files, (";assert 1\nadd.ab #13, 2\nmov.i 2, @1\njmp -2\ndat 0, 0\n",
+                          ";assert 1\nspl 0\nmov.i -1, 7\njmp -1\n")):
+    with open(f, "w") as out:
+        out.write(src)
+nano = ["-s", "80", "-c", "800", "-p", "80", "-l", "5", "-d", "5"]
+m.permutate, m.rounds, m.fixed_position = True, 50, 23
+part = rows(m.fight(bomber, paper))
+check("permutate, 50 rounds: Python = CLI -P", part, cli([exmars, *nano, "-P", "-r", "50", "-F", "23", *files]))
+full = [list(map(int, r.split())) for r in cli([exmars, *nano, "-P", *files])]
+check("CLI -P without -r plays permutations rounds", full[0][0] + full[1][0] + full[0][1], 142)
+if args.pmars:
+    check("permutate, 50 rounds: Python = pMARS -P", part,
+          cli([args.pmars, "-b", "-k", *nano, "-P", "-r", "50", "-F", "23", *files]))
+    m.rounds, m.fixed_position = m.permutations, 9
+    check("permutate, all rounds: Python = pMARS -P", rows(m.fight(bomber, paper)),
+          cli([args.pmars, "-b", "-k", *nano, "-P", "-F", "9", *files]))
+hb, hp = m.load(bomber), m.load(paper)
+m.rounds, m.fixed_position = 60, 31
+by_object = rows(m.fight(bomber, paper))
+check("load(): handles fight like objects", rows(m.fight(hb, hp)), by_object)
+check("load(): handle and object mixed", rows(m.fight(bomber, hp)), by_object)
+m.unload(hb)
+check("unload(): stale handle rejected", outcome(lambda: m.fight(hb, hp)), "ValueError")
+check("load(): freed slot reused", m.load(paper), hb)
+check("permutate rejected for three warriors",
+      outcome(lambda: setattr(Mars.Mars(3, 80, 800, 80, 5, 5), "permutate", True)), "ValueError")
+
+m = standard(6, 4000)
+m.permutate = True
+a, b = m.parse_string(marker(11)), m.parse_string(marker(22))
+check("permutate: P-space kept and owned across the match's rounds", rows(m.fight(a, b)), ["0 6", "0 6"])
+
 if args.hills:
     for suite in ("94top50", "psptop50"):
         folder = os.path.join(args.hills, suite)

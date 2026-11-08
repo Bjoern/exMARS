@@ -286,6 +286,11 @@ typedef struct mars_st {
     int dbgproceed;
     /* Results/P-space preserved; zero requests full execution. */
     int earlyExit;
+    /* pMARS -P: every round a new (position, starting warrior) pair (match.c). */
+    int permutate;
+    /* match.c: mars->pspaces holds the warriors' P-spaces in input order
+       and the previous match rotated pspacesOrigin. */
+    int pspacesRotated;
 } mars_t;
 
 /* The following holds the order in which opcodes, modifiers, and addr_modes

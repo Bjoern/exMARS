@@ -13,7 +13,7 @@ config = RbConfig::CONFIG
 def native(path)
   path.sub(%r{\A/([A-Za-z])/}, '\1:/')
 end
-sources = %w[rubyinterface.c pmars.c pspace.c sim.c].map { |f| File.join(root, f) }
+sources = %w[rubyinterface.c pmars.c pspace.c sim.c match.c].map { |f| File.join(root, f) }
 cmd = Shellwords.split(ENV.fetch('CC', config['CC'])) + %w[-shared -O3 -std=gnu17 -DRUBYINTERFACE]
 cmd += ['-I' + native(config['rubyhdrdir']), '-I' + native(config['rubyarchhdrdir'])]
 cmd += sources + ['-L' + native(config['libdir'])] + Shellwords.split(config['LIBRUBYARG_SHARED'])

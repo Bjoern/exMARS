@@ -61,7 +61,7 @@ def main():
     for name, definitions in [('exmars-fast', []),
                               ('exmars-reference', ['-DEXMARS_REFERENCE'])]:
         command = [args.cc, *shlex.split(args.flags), *fixed_definitions, *definitions,
-                   *[str(source / f) for f in ('pmars.c', 'pspace.c', 'sim.c')],
+                   *[str(source / f) for f in ('pmars.c', 'pspace.c', 'sim.c', 'match.c')],
                    '-o', str(output / (name + suffix))]
         subprocess.run(command, check=True)
         commands.append(command)
@@ -74,7 +74,7 @@ def main():
             parser.error(f'CPython import library not found: {library}')
         command = [args.cc, *shlex.split(args.flags), *fixed_definitions, '-shared',
                    '-I', sysconfig.get_path('include'),
-                   *[str(source / f) for f in ('python_mars.c', 'pmars.c', 'pspace.c', 'sim.c')],
+                   *[str(source / f) for f in ('python_mars.c', 'pmars.c', 'pspace.c', 'sim.c', 'match.c')],
                    str(library), '-o', str(output / ('Mars' + sysconfig.get_config_var('EXT_SUFFIX')))]
         subprocess.run(command, check=True)
         commands.append(command)

@@ -4,19 +4,11 @@
 #include "exhaust.h"
 #include "sim.h"
 #include "insn_help.h"
+#include "match.h"
 #include <time.h>
 #include <limits.h>
 
 extern int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w);
-extern const char* sanity_error(mars_t* mars);
-extern void clear_results(mars_t* mars);
-extern void save_pspaces(mars_t* mars);
-extern void amalgamate_pspaces(mars_t* mars);
-extern void load_warriors(mars_t* mars);
-extern void set_starting_order(unsigned int round, mars_t* mars);
-extern void accumulate_results(mars_t* mars);
-extern s32_t compute_positions(s32_t seed, mars_t* mars);
-extern s32_t rng(s32_t seed);
 extern void panic(char *msg);
 
 
@@ -265,6 +257,29 @@ VALUE mars_set_fixed_position(VALUE self, VALUE value) {
     return value;
 }
 
+VALUE mars_get_permutate(VALUE self) {
+    mars_t *mars;
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    return mars->permutate ? Qtrue : Qfalse;
+}
+
+/* pMARS -P (two warriors): each round a not yet used (position, starting
+ * warrior) pair; rounds = permutations plays every pair once. */
+VALUE mars_set_permutate(VALUE self, VALUE value) {
+    mars_t *mars;
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    if (RTEST(value) && mars->nWarriors != 2)
+        rb_raise(rb_eArgError, "permutate needs exactly two warriors, like pMARS -P");
+    mars->permutate = RTEST(value);
+    return value;
+}
+
+VALUE mars_get_permutations(VALUE self) {
+    mars_t *mars;
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    return UINT2NUM(mars_permutations(mars));
+}
+
 VALUE mars_set_rounds(VALUE self, VALUE newVal) {
     mars_t* mars;
     Check_Type(newVal, T_FIXNUM);
@@ -277,7 +292,6 @@ VALUE mars_set_rounds(VALUE self, VALUE newVal) {
 
 VALUE mars_fight(int argc, VALUE* argv, VALUE self) {
     int i, j, k;
-    int seed;
     mars_t* mars;
 
     TypedData_Get_Struct(self, mars_t, &mars_type, mars);
@@ -348,38 +362,12 @@ VALUE mars_fight(int argc, VALUE* argv, VALUE self) {
         }
     }
     
-    {
-        const char *error = sanity_error(mars);  /* check_sanity() would exit() */
-        if (error) rb_raise(rb_eArgError, "%s", error);
+    switch (mars_match(mars)) {
+    case MATCH_OK: break;
+    case MATCH_E_ARG: rb_raise(rb_eArgError, "%s", mars->errmsg);
+    case MATCH_E_MEMORY: rb_raise(rb_eNoMemError, "%s", mars->errmsg);
+    default: rb_raise(rb_eRuntimeError, "%s", mars->errmsg);
     }
-    clear_results(mars);
-    /* seed = mars->fixedPosition ? mars->fixedPosition - mars->minsep : rng((s32_t)((u32_t)time(0)*0x1d872b41UL)); */
-    if (mars->fixedPosition) {
-        seed = mars->fixedPosition - mars->minsep;
-    } else {
-        seed = rng(mars->seed);
-    }
-
-    memcpy(mars->pspacesOrigin, mars->pspaces, sizeof(pspace_t *) * mars->nWarriors);
-    sim_reset_pspaces(mars);
-    amalgamate_pspaces(mars);   /* Share P-spaces with equal PINs */
-
-    /* Fight rounds rounds. */
-    for (i=0; i < mars->rounds; ++i) {
-        int nalive;
-        sim_clear_core(mars);
-
-        seed = compute_positions(seed, mars);
-        load_warriors(mars);
-        set_starting_order(i, mars);
-
-        nalive = sim_mw(mars, mars->startPositions, mars->deaths);
-        if (nalive<0)
-            panic("simulator panic!\n");    
-
-        accumulate_results(mars);
-    }
-    mars->seed = seed;
 
     /*
       output_results(mars); 
@@ -528,6 +516,9 @@ RUBY_FUNC_EXPORTED void Init_Mars(void) {
     rb_define_method(cMars, "rounds=", mars_set_rounds, 1);
     rb_define_method(cMars, "early_exit", mars_get_early_exit, 0);
     rb_define_method(cMars, "early_exit=", mars_set_early_exit, 1);
+    rb_define_method(cMars, "permutate", mars_get_permutate, 0);
+    rb_define_method(cMars, "permutate=", mars_set_permutate, 1);
+    rb_define_method(cMars, "permutations", mars_get_permutations, 0);
 
     rb_define_method(cMars, "initialize", mars_initialize, 0);
 

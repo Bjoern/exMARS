@@ -92,6 +92,25 @@ end
   engine.fight(*Array.new(engine.warriors, w))
   check("custom settings #{engine.coresize}/#{engine.warriors}", engine.wins(0, engine.warriors), 2)
 end
+nano = Mars.new(2, 80, 800, 80, 5, 5)
+check('permutations (nano)', nano.permutations, 142)
+rejected('permutate with three warriors') { Mars.standard(3).permutate = true }
+sources = ["add.ab #13, 2\nmov.i 2, @1\njmp -2\ndat 0, 0", "spl 0\nmov.i -1, 7\njmp -1"]
+Tempfile.create(['perm-a', '.red'], __dir__) do |fa|
+  Tempfile.create(['perm-b', '.red'], __dir__) do |fb|
+    [fa, fb].zip(sources).each { |f, s| f.write(";redcode-94\n;assert 1\n#{s}\nend\n"); f.flush }
+    ws = [fa, fb].map { |f| nano.parse(f.path) }
+    nano.permutate, nano.rounds, nano.fixed_position = true, nano.permutations, 17
+    got = rows(nano, *ws).map { |l| l.split.take(2).join(' ') }
+    check('permutate plays every pair once', got.sum { |l| l.split[0].to_i } + got[0].split[1].to_i, 142)
+    if ARGV[0]
+      out, err, status = Open3.capture3(ARGV[0], '-s', '80', '-c', '800', '-p', '80', '-l', '5', '-d', '5',
+                                        '-P', '-F', '17', fa.path, fb.path)
+      raise err unless status.success?
+      check('permutate: Ruby = CLI -P', got, out.lines.last(2).map { |l| l.split.take(2).join(' ') })
+    end
+  end
+end
 if ARGV[1]
   %w[94top50 psptop50].each do |suite|
     dir = File.join(ARGV[1], suite)

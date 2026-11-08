@@ -38,6 +38,22 @@ for a warrior with no instructions or more than max_length, a start position
 outside it, or instruction data outside Warrior.py's numbering. The assembler
 still prints its errors and warnings to stdout/stderr.
 
+`m.permutate = True` is pMARS's `-P` for two warriors: each round of a fight
+plays a not yet used (position, starting warrior) pair, and `m.rounds =
+m.permutations` (2·(coresize−2·min_distance+1), 142 on nano) plays every
+placement in both orders once. It is one match, so P-space persists between its
+rounds, and `fixed_position` seeds the order as `-F` does. `h = m.load(warrior)`
+converts a warrior once; `fight()` takes such handles in place of Warrior
+objects (mixed is fine), and `m.unload(h)` frees one.
+
+```python
+m = Mars.Mars(2, 80, 800, 80, 5, 5)          # nano
+m.permutate, m.rounds = True, m.permutations
+opponents = [m.load(m.parse_file(f)) for f in files]
+for h in opponents:
+    m.fight(candidate, h)                      # = pmars -P (all 142 placements)
+```
+
 Run `python tests/python_bindings/run.py bin` for binding regressions.
 Safe early ties are enabled by default. Set `m.early_exit = False` for exact
 final core/queue state; scores and P-space are preserved in both modes.

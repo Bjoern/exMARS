@@ -13,20 +13,11 @@
 #include "exhaust.h"
 #include "sim.h"
 #include "insn_help.h"
+#include "match.h"
 
 // --- External Function Declarations ---
 extern int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w);
 extern int assemble_warrior_from_string(mars_t* mars, const char* redcode_string, warrior_struct* w);
-extern const char* sanity_error(mars_t* mars);
-extern void clear_results(mars_t* mars);
-extern void save_pspaces(mars_t* mars);
-extern void amalgamate_pspaces(mars_t* mars);
-extern void load_warriors(mars_t* mars);
-extern void set_starting_order(unsigned int round, mars_t* mars);
-extern void accumulate_results(mars_t* mars);
-extern s32_t compute_positions(s32_t seed, mars_t* mars);
-extern s32_t rng(s32_t seed);
-extern void panic(char *msg);
 
 // Python class cache
 static PyObject *pWarriorClass = NULL;
@@ -38,10 +29,19 @@ static PyObject *pInstructionClass = NULL;
  * Mars Python Type Definition
  * =================================================================
  */
+/* A warrior converted once by Mars.load(); code == NULL marks a free slot. */
+typedef struct {
+    insn_t *code;
+    u32_t len, start;
+    int have_pin;
+    u32_t pin;
+} slot_t;
+
 typedef struct {
     PyObject_HEAD
     mars_t *mars;
-    int pspaces_saved;  /* mars->pspaces holds the warriors' P-spaces in input order */
+    slot_t *slots;
+    int slot_cap;
 } MarsObject;
 
 /* pmars.c's tag for a warrior whose source declared PIN. */
@@ -64,6 +64,12 @@ Mars_dealloc(MarsObject *self)
         sim_free_bufs(self->mars);
         self->mars = NULL;
     }
+    if (self->slots) {
+        int h;
+        for (h = 0; h < self->slot_cap; h++) free(self->slots[h].code);
+        free(self->slots);
+        self->slots = NULL;
+    }
     Py_TYPE(self)->tp_free((PyObject *) self);
 }
 
@@ -77,6 +83,8 @@ Mars_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     self = (MarsObject *) type->tp_alloc(type, 0);
     if (self != NULL) {
         self->mars = NULL;
+        self->slots = NULL;
+        self->slot_cap = 0;
     }
     return (PyObject *) self;
 }
@@ -390,173 +398,223 @@ Mars_parse_string(MarsObject *self, PyObject *args)
 
 
 /*
- * Mars.fight(*warriors)
+ * Warrior conversion: Python Warrior object -> warrior_t (code buffer of
+ * maxWarriorLength instructions). Returns 0, or -1 with an exception set.
+ */
+static int
+convert_warrior(mars_t *mars, PyObject *pWarrior, int i, warrior_t *warrior)
+{
+    insn_t* in = NULL;
+    PyObject *pInstructionsArray, *pStartPos, *pInstruction, *pDataArray;
+    int j;
+
+    pInstructionsArray = PyObject_GetAttrString(pWarrior, "instructions");
+    pStartPos = PyObject_GetAttrString(pWarrior, "startPos");
+
+    if (!pInstructionsArray || !PyList_Check(pInstructionsArray)) {
+        Py_XDECREF(pInstructionsArray);
+        Py_XDECREF(pStartPos);
+        PyErr_SetString(PyExc_TypeError, "warrior.instructions must be a list.");
+        return -1;
+    }
+    if (!pStartPos || !PyLong_Check(pStartPos)) {
+        Py_XDECREF(pStartPos);
+        Py_DECREF(pInstructionsArray);
+        PyErr_SetString(PyExc_TypeError, "warrior.startPos must be an integer.");
+        return -1;
+    }
+
+    {
+        /* warrior->code holds maxWarriorLength instructions: check before copying. */
+        Py_ssize_t count = PyList_Size(pInstructionsArray);
+        long start = PyLong_AsLong(pStartPos);
+        Py_DECREF(pStartPos);
+        if (count < 1 || count > (Py_ssize_t) mars->maxWarriorLength) {
+            Py_DECREF(pInstructionsArray);
+            PyErr_Format(PyExc_ValueError, "warrior %d has %zd instructions; it must have 1..%u.",
+                         i, count, (unsigned) mars->maxWarriorLength);
+            return -1;
+        }
+        if (start < 0 || start >= count) {
+            Py_DECREF(pInstructionsArray);
+            if (!PyErr_Occurred())
+                PyErr_Format(PyExc_ValueError, "warrior %d: startPos must be 0..%zd.", i, count - 1);
+            return -1;
+        }
+        warrior->start = (u32_t) start;
+        warrior->len = (u32_t) count;
+    }
+    in = warrior->code;
+
+    /* warrior.pin: None (or absent) for no PIN; equal PINs share P-space. */
+    warrior->have_pin = 0;
+    if (PyObject_HasAttrString(pWarrior, "pin")) {
+        PyObject *pPin = PyObject_GetAttrString(pWarrior, "pin");
+        if (pPin && pPin != Py_None) {
+            long pin = PyLong_AsLong(pPin);
+            if (pin == -1 && PyErr_Occurred()) {
+                Py_DECREF(pPin);
+                Py_DECREF(pInstructionsArray);
+                PyErr_SetString(PyExc_TypeError, "warrior.pin must be an integer or None.");
+                return -1;
+            }
+            warrior->have_pin = 1;
+            warrior->pin = (u32_t)pin;
+        }
+        Py_XDECREF(pPin);
+    }
+
+    for (j = 0; (u32_t)j < warrior->len; ++j) {
+        int op, m, ma, mb;
+        int flags = 0;
+        long tmp;
+
+        pInstruction = PyList_GetItem(pInstructionsArray, j);
+        pDataArray = PyObject_GetAttrString(pInstruction, "data");
+
+        if (!pDataArray || !PyList_Check(pDataArray) || PyList_Size(pDataArray) != 6) {
+            PyErr_SetString(PyExc_TypeError, "instruction.data must be a list of 6 integers.");
+            Py_DECREF(pInstructionsArray);
+            Py_XDECREF(pDataArray);
+            return -1;
+        }
+
+        if ((u32_t)j == warrior->start) flags |= fl_START;
+
+        op  = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 0));
+        m   = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 1));
+        ma  = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 2));
+        tmp = PyLong_AsLong(PyList_GetItem(pDataArray, 3));
+        in->a = MODS(tmp, mars->coresize);
+
+        mb  = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 4));
+        tmp = PyLong_AsLong(PyList_GetItem(pDataArray, 5));
+        in->b = MODS(tmp, mars->coresize);
+
+        /* Numbering of Warrior.py: 18 opcodes, 7 modifiers, 8 addressing modes. */
+        if (PyErr_Occurred() || op < 0 || op >= N_OPCODES || m < 0 || m >= N_MODIFIERS ||
+            ma < 0 || ma >= N_MODES || mb < 0 || mb >= N_MODES) {
+            Py_DECREF(pDataArray);
+            Py_DECREF(pInstructionsArray);
+            PyErr_Clear();
+            PyErr_Format(PyExc_ValueError, "warrior %d, instruction %d: data must be integers "
+                         "(opcode 0..17, modifier 0..6, modes 0..7, two fields).", i, j);
+            return -1;
+        }
+
+        in->in = (flags << flPOS) | OP( op, m, ma, mb );
+        ++in;
+
+        Py_DECREF(pDataArray);
+    }
+    Py_DECREF(pInstructionsArray);
+    return 0;
+}
+
+/* The slot of handle h, or NULL with an exception set. */
+static slot_t *
+get_slot(MarsObject *self, PyObject *pHandle)
+{
+    long h = PyLong_AsLong(pHandle);
+    if (h == -1 && PyErr_Occurred()) return NULL;
+    if (h < 0 || h >= self->slot_cap || !self->slots[h].code) {
+        PyErr_Format(PyExc_ValueError, "unknown warrior handle %ld", h);
+        return NULL;
+    }
+    return &self->slots[h];
+}
+
+/*
+ * Mars.load(warrior) -> handle: converts the warrior once; fight() then takes
+ * the handle in its place and copies the converted code instead.
+ */
+static PyObject *
+Mars_load(MarsObject *self, PyObject *args)
+{
+    PyObject *pWarrior;
+    slot_t *slot;
+    warrior_t w;
+    int h;
+
+    if (!PyArg_ParseTuple(args, "O", &pWarrior)) return NULL;
+    for (h = 0; h < self->slot_cap && self->slots[h].code; h++) {}
+    if (h == self->slot_cap) {
+        int cap = self->slot_cap ? 2 * self->slot_cap : 64, k;
+        slot_t *grown = (slot_t *)realloc(self->slots, sizeof(slot_t) * cap);
+        if (!grown) return PyErr_NoMemory();
+        for (k = self->slot_cap; k < cap; k++) grown[k].code = NULL;
+        self->slots = grown;
+        self->slot_cap = cap;
+    }
+    slot = &self->slots[h];
+    memset(&w, 0, sizeof w);
+    w.code = (insn_t *)malloc(sizeof(insn_t) * self->mars->maxWarriorLength);
+    if (!w.code) return PyErr_NoMemory();
+    if (convert_warrior(self->mars, pWarrior, 0, &w) < 0) {
+        free(w.code);
+        return NULL;
+    }
+    slot->code = w.code;
+    slot->len = w.len;
+    slot->start = w.start;
+    slot->have_pin = w.have_pin;
+    slot->pin = w.pin;
+    return PyLong_FromLong(h);
+}
+
+/*
+ * Mars.unload(handle)
+ */
+static PyObject *
+Mars_unload(MarsObject *self, PyObject *args)
+{
+    PyObject *pHandle;
+    slot_t *slot;
+    if (!PyArg_ParseTuple(args, "O", &pHandle)) return NULL;
+    slot = get_slot(self, pHandle);
+    if (!slot) return NULL;
+    free(slot->code);
+    slot->code = NULL;
+    Py_RETURN_NONE;
+}
+
+/*
+ * Mars.fight(*warriors): Warrior objects or handles from load().
  */
 static PyObject *
 Mars_fight(MarsObject *self, PyObject *args)
 {
-    int i, j;
-    int seed;
+    int i, status;
     mars_t* mars = self->mars;
     int nWarriors = PyTuple_Size(args);
 
     if ((u32_t)nWarriors != mars->nWarriors) {
         PyErr_Format(PyExc_ValueError, "You have to supply %d warriors instead of %d.", mars->nWarriors, nWarriors);
         return NULL;
-    }   
+    }
 
-    for (i = 0; i < nWarriors; ++i) {        
+    for (i = 0; i < nWarriors; ++i) {
         warrior_t* warrior = &(mars->warriors[i]);
-        insn_t* in = NULL;
-        PyObject *pWarrior, *pInstructionsArray, *pStartPos, *pInstruction, *pDataArray;
-
-        pWarrior = PyTuple_GetItem(args, i);
-
-        pInstructionsArray = PyObject_GetAttrString(pWarrior, "instructions");
-        pStartPos = PyObject_GetAttrString(pWarrior, "startPos");
-
-        if (!pInstructionsArray || !PyList_Check(pInstructionsArray)) {
-            Py_XDECREF(pInstructionsArray);
-            Py_XDECREF(pStartPos);
-            PyErr_SetString(PyExc_TypeError, "warrior.instructions must be a list.");
-            return NULL;
-        }
-        if (!pStartPos || !PyLong_Check(pStartPos)) {
-            Py_XDECREF(pStartPos);
-            Py_DECREF(pInstructionsArray);
-            PyErr_SetString(PyExc_TypeError, "warrior.startPos must be an integer.");
-            return NULL;
-        }
-        
-        {
-            /* warrior->code holds maxWarriorLength instructions: check before copying. */
-            Py_ssize_t count = PyList_Size(pInstructionsArray);
-            long start = PyLong_AsLong(pStartPos);
-            Py_DECREF(pStartPos);
-            if (count < 1 || count > (Py_ssize_t) mars->maxWarriorLength) {
-                Py_DECREF(pInstructionsArray);
-                PyErr_Format(PyExc_ValueError, "warrior %d has %zd instructions; it must have 1..%u.",
-                             i, count, (unsigned) mars->maxWarriorLength);
-                return NULL;
-            }
-            if (start < 0 || start >= count) {
-                Py_DECREF(pInstructionsArray);
-                if (!PyErr_Occurred())
-                    PyErr_Format(PyExc_ValueError, "warrior %d: startPos must be 0..%zd.", i, count - 1);
-                return NULL;
-            }
-            warrior->start = (u32_t) start;
-            warrior->len = (u32_t) count;
-        }
-        in = warrior->code;
-
-        /* warrior.pin: None (or absent) for no PIN; equal PINs share P-space. */
-        warrior->have_pin = 0;
-        if (PyObject_HasAttrString(pWarrior, "pin")) {
-            PyObject *pPin = PyObject_GetAttrString(pWarrior, "pin");
-            if (pPin && pPin != Py_None) {
-                long pin = PyLong_AsLong(pPin);
-                if (pin == -1 && PyErr_Occurred()) {
-                    Py_DECREF(pPin);
-                    Py_DECREF(pInstructionsArray);
-                    PyErr_SetString(PyExc_TypeError, "warrior.pin must be an integer or None.");
-                    return NULL;
-                }
-                warrior->have_pin = 1;
-                warrior->pin = (u32_t)pin;
-            }
-            Py_XDECREF(pPin);
-        }
-
-        for (j = 0; (u32_t)j < warrior->len; ++j) {
-            int op, m, ma, mb;
-            int flags = 0;
-            long tmp;
-            
-            pInstruction = PyList_GetItem(pInstructionsArray, j);
-            pDataArray = PyObject_GetAttrString(pInstruction, "data");
-            
-            if (!pDataArray || !PyList_Check(pDataArray) || PyList_Size(pDataArray) != 6) {
-                PyErr_SetString(PyExc_TypeError, "instruction.data must be a list of 6 integers.");
-                Py_DECREF(pInstructionsArray);
-                Py_XDECREF(pDataArray);
-                return NULL;
-            }
-            
-            if ((u32_t)j == warrior->start) flags |= fl_START;
-
-            op  = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 0));
-            m   = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 1));
-            ma  = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 2));
-            tmp = PyLong_AsLong(PyList_GetItem(pDataArray, 3));
-            in->a = MODS(tmp, mars->coresize);
-
-            mb  = (int)PyLong_AsLong(PyList_GetItem(pDataArray, 4));
-            tmp = PyLong_AsLong(PyList_GetItem(pDataArray, 5));
-            in->b = MODS(tmp, mars->coresize);
-
-            /* Numbering of Warrior.py: 18 opcodes, 7 modifiers, 8 addressing modes. */
-            if (PyErr_Occurred() || op < 0 || op >= N_OPCODES || m < 0 || m >= N_MODIFIERS ||
-                ma < 0 || ma >= N_MODES || mb < 0 || mb >= N_MODES) {
-                Py_DECREF(pDataArray);
-                Py_DECREF(pInstructionsArray);
-                PyErr_Clear();
-                PyErr_Format(PyExc_ValueError, "warrior %d, instruction %d: data must be integers "
-                             "(opcode 0..17, modifier 0..6, modes 0..7, two fields).", i, j);
-                return NULL;
-            }
-
-            in->in = (flags << flPOS) | OP( op, m, ma, mb );
-            ++in;
-            
-            Py_DECREF(pDataArray);
-        }
-        Py_DECREF(pInstructionsArray);
-    }
-    
-    {
-        const char *error = sanity_error(mars);  /* check_sanity() would exit() */
-        if (error) {
-            PyErr_SetString(PyExc_ValueError, error);
+        PyObject *pWarrior = PyTuple_GetItem(args, i);
+        if (PyLong_Check(pWarrior)) {
+            slot_t *slot = get_slot(self, pWarrior);
+            if (!slot) return NULL;
+            memcpy(warrior->code, slot->code, sizeof(insn_t) * slot->len);
+            warrior->len = slot->len;
+            warrior->start = slot->start;
+            warrior->have_pin = slot->have_pin;
+            warrior->pin = slot->pin;
+        } else if (convert_warrior(mars, pWarrior, i, warrior) < 0) {
             return NULL;
         }
     }
-    clear_results(mars);
-    
-    if (mars->fixedPosition) {
-        seed = mars->fixedPosition - mars->minsep;
-    } else {
-        seed = rng(mars->seed);
+
+    status = mars_match(mars);
+    if (status == MATCH_E_MEMORY) return PyErr_NoMemory();
+    if (status != MATCH_OK) {
+        PyErr_SetString(PyExc_ValueError, mars->errmsg);
+        return NULL;
     }
-
-    /* Each fight is a fresh match, as on a KotH hill: P-space persists between
-     * its rounds only. Undo the previous fight's per-round rotation (which
-     * would swap ownership after an even number of rounds), drop PIN sharing,
-     * then clear: zeroes, and CORESIZE-1 as the last result. */
-    if (self->pspaces_saved)
-        memcpy(mars->pspacesOrigin, mars->pspaces, sizeof(pspace_t *) * mars->nWarriors);
-    sim_reset_pspaces(mars);
-    save_pspaces(mars);
-    self->pspaces_saved = 1;
-    amalgamate_pspaces(mars);
-
-    for (i=0; (u32_t)i < mars->rounds; ++i) {
-        int nalive;
-        sim_clear_core(mars);
-
-        seed = compute_positions(seed, mars);
-        load_warriors(mars);
-        set_starting_order(i, mars);
-
-        nalive = sim_mw(mars, mars->startPositions, mars->deaths);
-        if (nalive < 0) {
-            PyErr_SetString(PyExc_ValueError, mars->errmsg);
-            return NULL;
-        }
-
-        accumulate_results(mars);
-    }
-    mars->seed = seed;
 
     Py_INCREF(self);
     return (PyObject *)self;
@@ -732,6 +790,27 @@ static int Mars_set_fixed_position(MarsObject *self, PyObject *value, void *clos
     self->mars->fixedPosition = (int)position;
     return 0;
 }
+static PyObject * Mars_get_permutate(MarsObject *self, void *closure) {
+    return PyBool_FromLong(self->mars->permutate);
+}
+static int Mars_set_permutate(MarsObject *self, PyObject *value, void *closure) {
+    int enabled;
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the permutate attribute");
+        return -1;
+    }
+    enabled = PyObject_IsTrue(value);
+    if (enabled < 0) return -1;
+    if (enabled && self->mars->nWarriors != 2) {
+        PyErr_SetString(PyExc_ValueError, "permutate needs exactly two warriors, like pMARS -P");
+        return -1;
+    }
+    self->mars->permutate = enabled;
+    return 0;
+}
+static PyObject * Mars_get_permutations(MarsObject *self, void *closure) {
+    return PyLong_FromUnsignedLong(mars_permutations(self->mars));
+}
 static PyObject * Mars_get_cycles(MarsObject *self, void *closure) { return PyLong_FromLong(self->mars->cycles); }
 static PyObject * Mars_get_processes(MarsObject *self, void *closure) { return PyLong_FromLong(self->mars->processes); }
 static PyObject * Mars_get_length(MarsObject *self, void *closure) { return PyLong_FromLong(self->mars->maxWarriorLength); }
@@ -745,6 +824,11 @@ static PyGetSetDef Mars_getseters[] = {
      "Allow proven early ties (default True); preserves results/P-space, not final core/queues", NULL},
     {"fixed_position", (getter)Mars_get_fixed_position, (setter)Mars_set_fixed_position,
      "Placement seed like the CLI's -F (0 = random, default); every fight() then repeats pMARS's placements", NULL},
+    {"permutate", (getter)Mars_get_permutate, (setter)Mars_set_permutate,
+     "pMARS -P (two warriors): each round a not yet used (position, starting warrior) pair; "
+     "rounds = permutations plays every pair once, in pMARS's order for the same fixed_position", NULL},
+    {"permutations", (getter)Mars_get_permutations, NULL,
+     "Rounds that play every placement in both starting orders once (pMARS -P's default)", NULL},
     {"coresize", (getter)Mars_get_coresize, NULL, "Size of core memory", NULL},
     {"cycles", (getter)Mars_get_cycles, NULL, "Max cycles per round", NULL},
     {"max_processes", (getter)Mars_get_processes, NULL, "Max processes per warrior", NULL},
@@ -766,7 +850,12 @@ static PyMethodDef Mars_methods[] = {
     {"parse_string", (PyCFunction) Mars_parse_string, METH_VARARGS,
      "Parses a Redcode warrior from a string and returns a Warrior object."},
     {"fight", (PyCFunction) Mars_fight, METH_VARARGS,
-     "fight(*warriors): one match of self.rounds rounds, starting from fresh P-space."},
+     "fight(*warriors): one match of self.rounds rounds, starting from fresh P-space. "
+     "Each warrior is a Warrior object or a handle from load()."},
+    {"load", (PyCFunction) Mars_load, METH_VARARGS,
+     "load(warrior) -> handle: converts the warrior once, for fight() to reuse."},
+    {"unload", (PyCFunction) Mars_unload, METH_VARARGS,
+     "unload(handle): frees a handle from load()."},
     {"results_str", (PyCFunction) mars_results_str, METH_NOARGS,
      "Returns the fight results as a string."},
     {"wins", (PyCFunction) mars_results_wins, METH_VARARGS,

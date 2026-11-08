@@ -112,7 +112,7 @@ const w = await assemble(source, hill);
 const f = await createFighter(hill);   // one per Web Worker, kept for the whole run
 const h = f.load(w);                     // handle; throws on invalid input
 f.fight(h, h2, {rounds: 250, position: 1234});  // -> {wins, ties, losses} of h
-f.exact(h, h2);                          // -> {wins, ties, losses, rounds}
+f.exact(h, h2, {position: 1234});        // -> {wins, ties, losses, rounds}: pMARS -P
 f.fightMany([h, h2, h3], {rounds: 200, position: 1234});
 // -> {results: [[dead, alive1, ..., aliveN], ...]} per warrior, in input order
 f.unload(h);
@@ -131,11 +131,14 @@ f.dispose();
   `fixed_position`: a placement seed (0 = random), not one fixed position. A given
   (position, rounds) gives pMARS's placements and starting orders round for
   round. Non-zero values must lie in `minDistance..coreSize−minDistance`.
-- `exact`: every legal offset `p` of `h2` from `minDistance` to
-  `coreSize−minDistance`, one round with `h` starting (`h` at 0, `h2` at `p`)
-  and one with `h2` starting (`h2` at 0, `h` at `coreSize−p`), each a fresh
-  match; `rounds = 2·(coreSize−2·minDistance+1)` (142 on nano). Totals equal
-  pMARS's permutation mode (`-P -r rounds`) for warriors without P-space.
+- `exact`: pMARS's permutation mode (`-P`): one match of
+  `rounds = 2·(coreSize−2·minDistance+1)` rounds (142 on nano), each a not yet
+  used (offset of `h2`, starting warrior) pair, so every legal placement in both
+  starting orders once. As in pMARS, P-space persists between these rounds and
+  `position` (as `-F`, 0 = random) seeds their order, so `exact(h, h2,
+  {position})` equals `pmars -P -F position` round for round; for warriors
+  without P-space the order doesn't matter. The rounds come from the shared
+  `match.c`, also behind the CLI's `-P` and the Python/Ruby `permutate`.
 - `fightMany(handles, {rounds, position})`: one match of 2 to 36 warriors
   (pMARS's limit; handles may repeat), as pMARS runs a multi-warrior battle:
   placements by pMARS's `posit`, falling back to `npos`, seeded from `position`
@@ -193,7 +196,7 @@ produced them (0..coreSize−1).
 
 The fighter takes only the five settings above, so these can't be set by
 accident; use pMARS for hills that need them: no ICWS '88 mode, no free
-permutation toggle (`exact` covers exhaustive scoring), P-space size fixed at
+permutation toggle for `fight` (`exact` is `-P` for a full match), P-space size fixed at
 `coreSize/16` (pMARS's default is `coreSize/d` for the largest divisor `d ≤ 16`
 of `coreSize`, so the two agree only when 16 divides `coreSize`), at most 36
 warriors, and non-numeric `-F` seeds (pMARS's RC5 generator) are not
@@ -204,7 +207,7 @@ supported. The API returns counts; scoring formulas are the caller's.
 `fighter.mjs` exports `_ex_configure(coreSize, cycles, processes, maxLength,
 minDistance)`, `_ex_load(int32 *insns, count, start, hasPin, pin)` → handle,
 `_ex_unload(handle)`, `_ex_fight(a, b, rounds, fixedPosition, int32 out[3])`,
-`_ex_fight_exact(a, b, int32 out[3])`, `_ex_fight_many(int32 *handles, n,
+`_ex_fight_exact(a, b, fixedPosition, int32 out[3])`, `_ex_fight_many(int32 *handles, n,
 rounds, fixedPosition, int32 out[n·(n+1)])` (row `i` is `out[i·(n+1) ..]`,
 dead first), `_ex_set_early_exit(on)` and
 `_ex_error()`, plus `_malloc`/`_free` and `HEAPU8`/`HEAP32`/`UTF8ToString`.

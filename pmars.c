@@ -46,6 +46,7 @@
 #include "sim.h"
 #include "insn_help.h"
 #include "insn.h"
+#include "match.h"
 
 #define concat(a,b) (strlen(a)+strlen(b)<MAXALLCHAR?pstrcat((a),(b)):NULL)
 #ifndef min
@@ -215,23 +216,12 @@ void disposesrc(src_st* r);
 
 int globalswitch_warrior(mars_t* mars, warrior_struct* w, char* str, uShrt idx, uShrt loc, uShrt lspnt);
 void encode_warrior(mars_t* mars, warrior_struct* w, uShrt sspnt);
-s32_t rng(s32_t seed);
 void panic(const char *msg);
 int assemble_warrior(mars_t* mars, char* fName, warrior_struct* w);
-void clear_results(mars_t* mars);
-void save_pspaces(mars_t* mars);
-void amalgamate_pspaces(mars_t* mars);
-void accumulate_results(mars_t* mars);
 void check_sanity(mars_t* mars);
-const char* sanity_error(mars_t* mars);
 void readargs(int argc, char** argv, mars_t* mars);
 void usage(void);
-void load_warriors(mars_t* mars);
-void set_starting_order(unsigned int round, mars_t* mars);
 void output_results(mars_t* mars);
-s32_t compute_positions(s32_t seed, mars_t* mars);
-void npos(s32_t *seed, mars_t* mars);
-int posit(s32_t *seed, mars_t* mars);
 mars_t* init(int argc, char** argv);
 void pmars2exhaust(mars_t* mars, warrior_struct** warriors, int wCount);
 
@@ -2521,21 +2511,6 @@ static int assemble_file(mars_t* mars, char* fName, warrior_struct* w)
 /* exhaust related */
 
 
-/* pmars/rng.c random number generator
- */
-s32_t rng(s32_t seed)
-{
-    /* return FIX2INT(rb_eval_string("rand(2147483647)")); */
-    register s32_t temp = seed;
-    /* As pMARS pos.c: 0 is a fixed point of this generator, so -F equal to
-     * the minimum separation would otherwise repeat one placement forever. */
-    temp = (s32_t)((u32_t)temp & 0x7fffffffu);
-    if (!temp) temp = 1;
-    temp = 16807 * (temp % 127773) - 2836 * (temp / 127773);
-    if (temp < 0)
-        temp += 2147483647;
-    return temp;
-}
 
 
 void panic(const char *msg)
@@ -2552,7 +2527,9 @@ void usage(void)
     printf("usage: exmars [opts] warriors...\n");
     printf("      exmars --version\n");
     printf("opts: -r <rounds>, -c <cycles>, -F <pos>, -s <coresize>,\n"
-           "      -p <maxprocs>, -l <maxlen>, -d <minsep>, -bk, -X\n"
+           "      -p <maxprocs>, -l <maxlen>, -d <minsep>, -P, -bk, -X\n"
+           "      -P: every placement in both starting orders (pMARS -P); without -r,\n"
+           "          2*(coresize-2*minsep+1) rounds play each once\n"
            "      -X: disable default safe early ties; preserve final core/queues\n      -E: enable safe early ties (default; compatibility option)\n");
 #if EXMARS_FIXED_CORESIZE || EXMARS_FIXED_PROCESSES || EXMARS_FIXED_CYCLES
     printf("compiled constants (0=dynamic): core=%u processes=%lu cycles=%lu\n",
@@ -2562,88 +2539,6 @@ void usage(void)
     exit(1);
 }
 
-void clear_results(mars_t* mars)
-{
-    memset(mars->results, 0, sizeof(u32_t)*mars->nWarriors*(mars->nWarriors+1));
-    /*
-      unsigned int i, j;
-      for (i=0; i<NWarriors; i++) {
-      for (j=0; j<=NWarriors; j++) {
-      Results[i*(NWarriors+1) + j] = 0;
-      }
-      }
-    */
-}
-
-void save_pspaces(mars_t* mars)
-{
-    memcpy(mars->pspaces, mars->pspacesOrigin, sizeof(pspace_t *)*mars->nWarriors );
-}
-
-void amalgamate_pspaces(mars_t* mars)
-{
-    unsigned int i, j;
-
-    /* Share p-space according to PINs. */
-    for (i=0; i<mars->nWarriors; i++) {
-        if ( mars->warriors[i].have_pin ) {
-            for (j=0; j<i; j++) {
-                if ( mars->warriors[j].have_pin &&
-                     mars->warriors[j].pin == mars->warriors[i].pin )
-                {
-                    pspace_share(mars->pspaces[i], mars->pspaces[j]);
-                }
-            }
-        }
-    }
-}
-
-
-void load_warriors(mars_t* mars)
-{
-    unsigned int i;
-    for (i=0; i<mars->nWarriors; i++) {
-        sim_load_warrior(mars, mars->positions[i], mars->warriors[i].code, mars->warriors[i].len);
-    }
-}
-
-void set_starting_order(unsigned int round, mars_t* mars)
-{
-    unsigned int i;
-
-    /* Copy load positions into starting positions array
-       with a cyclic shift of rounds places. */
-    for (i=0; i<mars->nWarriors; i++) {
-        unsigned int j = (i+round) % (mars->nWarriors);
-        mars->startPositions[i] =(field_t)((mars->positions[j] + mars->warriors[j].start ) % (mars->coresize));
-    }
-
-    /* Copy p-spaces into simulator p-space array with a
-       cyclic shift of rounds places. */
-    /*
-      ps = sim_get_pspaces();
-      for (i=0; i<NWarriors; i++) {
-      ps[i] = PSpaces[(i + round) % NWarriors];
-      }
-    */
-    for (i=0; i<mars->nWarriors; i++) {
-        mars->pspacesOrigin[i] = mars->pspaces[(i + round) % (mars->nWarriors)];
-    }
-}
-
-void accumulate_results(mars_t* mars)
-{
-    unsigned int i;
-
-    /* Fetch the results of the last round from p-space location 0
-       that has been updated by the simulator. */
-    for (i=0; i<mars->nWarriors; i++) {
-        unsigned int result;
-        result = pspace_get(mars->pspaces[i], 0);
-        /* printf("%d ", result); */
-        mars->results[i*(mars->nWarriors+1) + result]++;
-    }
-}
 
 void output_results(mars_t* mars)
 {
@@ -2663,152 +2558,6 @@ void output_results(mars_t* mars)
     }
 }
 
-/*---------------------------------------------------------------
- * Warrior positioning algorithms
- *
- * These are pMARS compatible.  Warrior 0 is always positioned at 0.
- * posit() and npos() are transcribed from pmars/pos.c.  */
-
-#define RETRIES1 20                /* how many times to try generating one
-                                    * position */
-#define RETRIES2 4                /* how many times to start backtracking */
-int posit(s32_t *seed, mars_t* mars)
-{
-    unsigned int pos = 1, i;
-    unsigned int retries1 = RETRIES1, retries2 = RETRIES2;
-    int     diff;
-
-    do {
-        /* generate */
-        *seed = rng(*seed);
-        /*mars->positions[pos] = (field_t)(rand()%(mars->coresize - 2*mars->minsep+1) + mars->minsep);*/
-        mars->positions[pos] = (field_t)((*seed % (mars->coresize - 2*mars->minsep+1))+mars->minsep);
-
-        /* test for overlap */
-        for (i = 1; i < pos; ++i) {
-            /* calculate positive difference */
-            diff = (int) mars->positions[pos] - mars->positions[i];
-            if (diff < 0)
-                diff = -diff;
-            if ((unsigned int)diff < mars->minsep)
-                break;      /* overlap! */
-        }
-
-        if (i == pos)       /* no overlap, generate next number */
-            ++pos;
-        else {          /* overlap */
-            if (!retries2)
-                return 1;   /* exceeded attempts, fail */
-            if (!retries1) {    /* backtrack: generate new sequence starting */
-                pos = i;    /* at arbitrary position (last conflict) */
-                --retries2;
-                retries1 = RETRIES1;
-            } else      /* generate new current number (pos not
-                         * incremented) */
-                --retries1;
-        }
-    } while (pos < mars->nWarriors);
-    return 0;
-}
-
-void npos(s32_t *seed, mars_t* mars)
-{
-    unsigned int i, j;
-    unsigned int temp;
-    unsigned int room = mars->coresize - mars->minsep*mars->nWarriors+1;
-
-    /* Choose NWarriors-1 positions from the available room. */
-    for (i = 1; i < mars->nWarriors; i++) {
-        *seed = rng(*seed);
-        temp = *seed % room;
-        for (j = i - 1; j > 0; j--) {
-            if (temp > mars->positions[j])
-                break;
-            mars->positions[j+1] = mars->positions[j];
-        }
-        mars->positions[j+1] = temp;
-    }
-
-    /* Separate the positions by minsep cells. */
-    temp = mars->minsep;
-    for (i = 1; i < mars->nWarriors; i++) {
-        mars->positions[i] += temp;
-        temp += mars->minsep;
-    }
-
-    /* Random permutation of positions. */
-    for (i = 1; i < mars->nWarriors; i++) {
-        *seed = rng(*seed);
-        j = *seed % (mars->nWarriors - i) + i;
-        temp = mars->positions[j];
-        mars->positions[j] = mars->positions[i];
-        mars->positions[i] = temp;
-    }
-}
-
-
-s32_t compute_positions(s32_t seed, mars_t* mars)
-{
-    u32_t avail = mars->coresize+1 - mars->nWarriors * mars->minsep;
-
-    mars->positions[0] = 0;
-
-    /* Case single warrior. */
-    if (mars->nWarriors == 1) return seed;
-
-    /* Case one on one. */
-    if (mars->nWarriors == 2) {
-        mars->positions[1] = (field_t)(mars->minsep + seed % avail);
-        /*printf("s: %ld\n", mars->positions[pos]),
-          ++seedtest[mars->positions[pos]];*/
-        seed = rng(seed);
-        return seed;
-    }
-
-    if (mars->nWarriors>2) {
-        if (posit(&seed, mars)) {
-            npos(&seed, mars);
-        }
-    }
-    return seed;
-}
-
-/* NULL when the loaded warriors can be fought, else why not (also left in
- * mars->errmsg). For library callers, which must not exit(). */
-const char* sanity_error(mars_t* mars)
-{
-    u32_t space_used;
-    unsigned int i;
-
-    /* Make sure each warrior has some code. */
-    for (i=0; i<mars->nWarriors; i++) {
-        if (mars->warriors[i].len == 0) {
-            sprintf(mars->errmsg,"warrior %d has no code\n", i);
-            return mars->errmsg;
-        }
-    }
-
-    /* Make sure there is some minimum sepation. */
-    if ( mars->minsep == 0 ) {
-        mars->minsep = min(mars->coresize/mars->nWarriors, mars->maxWarriorLength);
-    }
-
-    /* Make sure minsep dominates the lengths of all warriors. */
-    for (i=0; i<mars->nWarriors; i++) {
-        if ( mars->minsep < mars->warriors[i].len ) {
-            strcpy(mars->errmsg, "minimum separation must be >= longest warrior\n");
-            return mars->errmsg;
-        }
-    }
-
-    /* Make sure there is space for all warriors to be loaded. */
-    space_used = mars->nWarriors*mars->minsep;
-    if ( space_used > mars->coresize ) {
-        strcpy(mars->errmsg, "warriors too large to fit into core\n");
-        return mars->errmsg;
-    }
-    return NULL;
-}
 
 /* The command-line tool's check: exits with the message. */
 void check_sanity(mars_t* mars)
@@ -2826,6 +2575,7 @@ void readargs(int argc, char** argv, mars_t* mars) {
     char c;
     int cix;
     int tmp;
+    int roundsGiven = 0;
     warriorNames_t* currWarrior = NULL;
 
     mars->warriorNames = NULL;
@@ -2845,6 +2595,7 @@ void readargs(int argc, char** argv, mars_t* mars) {
                     case 'm': mars->isMultiWarriorOutput = 1; break;
                     case 'E': mars->earlyExit = 1; break;
                     case 'X': mars->earlyExit = 0; break;
+                    case 'P': mars->permutate = 1; break;
 
                     case 'F':
                         if ( n == argc-1 || !isdigit(argv[n+1][0]) )
@@ -2897,6 +2648,7 @@ void readargs(int argc, char** argv, mars_t* mars) {
                         if ( tmp < 0 )
                             panic( "can't do a negative number of rounds!\n" );
                         mars->rounds = tmp;
+                        roundsGiven = 1;
                         break;
                     case 'c':
                         if ( n == argc-1 || !isdigit(argv[n+1][0]) )
@@ -2935,6 +2687,13 @@ void readargs(int argc, char** argv, mars_t* mars) {
 
     if ( mars->nWarriors == 0 )
         usage();
+    if (mars->permutate) {
+        /* As pMARS: before assembly, so ROUNDS is predefined to the count. */
+        if (mars->nWarriors != 2)
+            panic(permutateMultiWarrior);
+        if (!roundsGiven)
+            mars->rounds = mars_permutations(mars);
+    }
 }
 
 
@@ -3026,7 +2785,7 @@ void pmars2exhaust(mars_t* mars, warrior_struct** warriors, int wCount)
 
 
 int main(int argc, char** argv) {
-    u32_t i, seed;
+    u32_t i;
     warriorNames_t* currWarrior;
     warrior_struct** warriors;
 
@@ -3078,36 +2837,9 @@ int main(int argc, char** argv) {
     }
 #endif
     /* fight! */
-    
     check_sanity(mars);
-    clear_results(mars);
-
-    if (mars->fixedPosition) {
-        seed = mars->fixedPosition - mars->minsep;
-    } else {
-        seed = rng(mars->seed);
-    }
-
-    save_pspaces(mars);
-    amalgamate_pspaces(mars);   /* Share P-spaces with equal PINs */
-
-    /* Fight rounds rounds. */
-    for (i=0; i < mars->rounds; ++i) {
-        int nalive;
-        sim_clear_core(mars);
-
-        seed = compute_positions(seed, mars);
-        load_warriors(mars);
-        set_starting_order(i, mars);
-
-        nalive = sim_mw(mars, mars->startPositions, mars->deaths);
-        if (nalive<0)
-            panic(mars->errmsg);
-
-        accumulate_results(mars);
-    }
-    mars->seed = seed;
-
+    if (mars_match(mars) != MATCH_OK)
+        panic(mars->errmsg);
 
     output_results(mars);
     sim_free_bufs(mars);

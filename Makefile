@@ -11,7 +11,7 @@ CC = gcc
 # These are the "classic" flags, which you found to be fast and effective.
 CFLAGS = -std=gnu17 -O3 -fomit-frame-pointer
 
-SOURCES = pmars.c pspace.c sim.c
+SOURCES = pmars.c pspace.c sim.c match.c
 OBJECTS = $(SOURCES:.c=.o)
 TARGET = exmars
 
@@ -24,7 +24,7 @@ $(TARGET): $(OBJECTS)
 	@echo "Built $(TARGET)."
 
 # Rule to compile .c files to .o files
-$(OBJECTS): exhaust.h sim.h hill_config.h
+$(OBJECTS): exhaust.h sim.h hill_config.h match.h
 sim.o: sim_loop.inc
 
 .c.o:
