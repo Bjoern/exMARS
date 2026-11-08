@@ -302,7 +302,12 @@ int mars_match(mars_t *mars)
         int nalive;
         sim_clear_core(mars);
         if (permbuf) {
-            /* pMARS sim.c: draw a (position, starter) pair without replacement. */
+            /* pMARS sim.c: draw a (position, starter) pair without replacement.
+             * TODO (cleanup, no behaviour change): move this draw into a
+             * permutate_positions(&seed, mars) next to compute_positions(),
+             * returning the starter, with permbuf/permidx kept in mars_t, so
+             * the loop makes a single placement call. Kept inline for now, as
+             * in pMARS's own round loop. */
             if (permidx == 0)
                 for (; permidx < 2 * positions; permidx++) permbuf[permidx] = permidx;
             permtmp = (u32_t)seed % permidx;
