@@ -5,7 +5,7 @@
  *   const f = await createFighter(hill);     // one per Worker, kept for the whole run
  *   const h = f.load(w);                     // handle
  *   f.fight(h, h2, {rounds: 250, position: 1234});  // {wins, ties, losses}
- *   f.exact(h, h2);                          // {wins, ties, losses, rounds}
+ *   f.exact(h, h2, {position: 1234});        // {wins, ties, losses, rounds}: pMARS -P
  *   f.fightMany([h, h2, h3], {rounds: 200, position: 1234});  // {results: [[dead, alive1..aliveN], ...]}
  *
  * hill = {coreSize, cycles, processes, maxLength, minDistance}. Instructions are
@@ -313,12 +313,19 @@ class Fighter {
     return {results};
   }
 
-  /** Every legal relative position in both starting orders, one round each. */
-  exact(a, b) {
+  /**
+   * pMARS -P: one match playing every legal relative position in both starting
+   * orders once, P-space kept between its rounds. `position` seeds the order
+   * as -F does (0 = random); the order matters only to warriors using P-space.
+   */
+  exact(a, b, {position = 0, ...rest} = {}) {
     const m = this.#live();
-    this.#handle(a); this.#handle(b);
-    this.#check(m._ex_fight_exact(a, b, this.#out));
     const {coreSize, minDistance} = this.#hill;
+    if (Object.keys(rest).length) throw new TypeError('unknown option ' + Object.keys(rest)[0]);
+    if (!Number.isSafeInteger(position) || (position !== 0 && (position < minDistance || position > coreSize - minDistance)))
+      throw new RangeError('position must be 0 or minDistance..coreSize-minDistance');
+    this.#handle(a); this.#handle(b);
+    this.#check(m._ex_fight_exact(a, b, position, this.#out));
     return {...this.#result(), rounds: 2 * (coreSize - 2 * minDistance + 1)};
   }
 

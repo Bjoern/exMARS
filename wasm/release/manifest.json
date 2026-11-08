@@ -1,6 +1,6 @@
 {
   "compiler": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 4.0.23 (7a5d93b50f6a3a35e85a0d2fc9e667b8498e6aed)",
-  "builtFromParentCommit": "d1eff37fa11e1bce2e6c4cfb5ef7756ef5aec650",
+  "builtFromParentCommit": "df56df19122b9bce785c2ed2bf4c9462f3a5db93",
   "commands": [
     [
       "emcc",
@@ -11,6 +11,7 @@
       "wasm/fighter.c",
       "sim.c",
       "pspace.c",
+      "match.c",
       "-sMODULARIZE=1",
       "-sEXPORT_ES6=1",
       "-sENVIRONMENT=web,worker,node",
@@ -34,6 +35,7 @@
       "pmars.c",
       "sim.c",
       "pspace.c",
+      "match.c",
       "-sMODULARIZE=1",
       "-sEXPORT_ES6=1",
       "-sENVIRONMENT=web,worker,node",
@@ -48,31 +50,33 @@
     ]
   ],
   "sources": {
-    "wasm/fighter.c": "95aa6694fa9694d6572860e7c13be0e8e555666e1e0610760e4302d2fb606c20",
+    "wasm/fighter.c": "7b7aa0c0ed947e6f9db2c188fc8135175bde4cc89750aed4e183ecad5b850b6f",
     "wasm/assembler.c": "540c40a340c12c141065381d246dc41955f53757e608c9996fa58b2d26f231c2",
-    "wasm/fighter-client.mjs": "32d87fcf628cc5c9fbf35c877e442ac6f9604e654639a6a4f65a2adb0f709301",
-    "wasm/build.py": "9494b1c97559ec0aaaf9c7bcf21b4dc7df327879fd83792ec036c71e3fe37064",
-    "wasm/release.py": "5a819b1c3291e413a3697da852e0ac819d2514ff6ff8868af3e5bf2dc5853adf",
-    "wasm/README.md": "d6146532a1759687a137685ff38d4a0b7b1ca8be297ce47ed076d941e92cbbfb",
-    "pmars.c": "7198e7ec3a9404d194b8486000d79f02f4b17323e0f06064fa8c52a8d2cd1dae",
+    "wasm/fighter-client.mjs": "8066b9f4a2916419efb7fed4a4b7ee6552605fd2b707e26876c2d65b004f1fa0",
+    "wasm/build.py": "a6850d8e87f23a9dae187bb536d330e7d403975c77d0d7e0c935d36b2a5ec10f",
+    "wasm/release.py": "9dfb76874b9691e30a0ebec61dd8508b1b81d8d9017ac65e1e8a1dd8d927a102",
+    "wasm/README.md": "78eef31b6fd8d22f10724342f282574d5b438760ff29c4a464776030118924dc",
+    "pmars.c": "99b9b6cc4a3914ee49282434dd748f9db1964acbdba8875d8a60ff2aa10cce40",
     "sim.c": "a1ac12f98b3b084aa6228e2c0016fad7a71e821d450238cc20cbda4b35130eb4",
     "sim_loop.inc": "24cede1b57533d032d35496e8c3b88bfd8854be6c089c52bcfcbcfc4df7f6695",
     "pspace.c": "88f107b46f7101a95dec5f5d27c3bbe73789b3dd639ffdc088648bfa295bba1b",
-    "exhaust.h": "50ebfb405b2cdfddc2d45572aaf24e1439065f3f55dbfcd9ade0a1ee79e81691",
+    "match.c": "73508e77410c178a542dd7025f0f51fd1912f8cae6eb88422b35a25421d119bb",
+    "match.h": "d80af2a3bd10173219d2ed8726239b59c527301afca06af82fe5579a22837a3f",
+    "exhaust.h": "8990d2a68df8c894c15f46f292a19a759252509a10614ddb0bb4e14dc8264505",
     "sim.h": "976ce401d9bd2c1e7ea8795c626ede3494aa947c8ba85b59d15108f08466ea23",
     "insn.h": "eb76f4be7dc3dcad858aaff7d4b74a13f06f5b0f14aec63aa5414a3f20f6e0c3",
     "insn_help.h": "7119c06abd1804d7e6eb3b79970496b4297a011ddb9f2290157dbb88992a3828",
     "pspace.h": "4a7ccd893621cc592ac00638cae4bfdecc9a01185ff5afb0ec4465bc0a7523e8",
     "hill_config.h": "720f2da53099a9e449a6ba3a8a8af593c83ee1c30a5ef58a3f828a19fe31fb89",
     "Warrior.py": "211ceb1a84494edff427dc7cef99f407e1457bdba71f60665ca66ccba2ac2afc",
-    "README.md": "e57f5c54abf67691153490a399a7e2478516a6bbdc0b1a0728208686d204862a"
+    "README.md": "3fd971b1fe84e6c62f6c8398c3308a0aff19fe05b5a339f9798fab4e03dfcc39"
   },
   "files": {
     "fighter.mjs": "874769fc835a80276b17cb318832b5afc4a3750b6d53f2afd4cf3b95b23bcc86",
-    "fighter.wasm": "f764cc1067831c9b65a60e79f148d838e109ed2ce10934e24fa270e3be3c1962",
+    "fighter.wasm": "d254ea790f28e124e828a67f9148a309866d248d2b45fd8834135bed5d4d7e25",
     "assembler.mjs": "454c2b37b1e7b590ae49f6b83b93c6b463da92f9c3e8e8caf8dd33bd01fb4db8",
-    "assembler.wasm": "5781e4224fb58d77796ac894c01cb4dc6c95b64547059d783c19cd313265e329",
-    "fighter-client.mjs": "32d87fcf628cc5c9fbf35c877e442ac6f9604e654639a6a4f65a2adb0f709301",
-    "exmars-fighter-src.zip": "b2693b2169baa201a3dd3eb26540c2d65586f4045d489b54a6df01f0e7bacdf4"
+    "assembler.wasm": "662540c9121ad7d8b979eeebf01a86fd2e0f9eb5f64ef85c0cb67e0236230380",
+    "fighter-client.mjs": "8066b9f4a2916419efb7fed4a4b7ee6552605fd2b707e26876c2d65b004f1fa0",
+    "exmars-fighter-src.zip": "c1036f9d9f3b6f75704db6b63c1012a47f7cf277ebc3dc1b3a87b63bd3809486"
   }
 }
