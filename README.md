@@ -44,11 +44,12 @@ its branch and publication notes describe that preparation stage.
 - [Python bindings](README-python.md): the added CPython extension,
   Warrior/Instruction helpers, in-memory assembly, API examples, and build
   and test instructions.
-- One round loop for all front ends (`match.c`): the CLI, Python, Ruby and
-  Wasm share placements, starting order and P-space handling, including
-  pMARS's permutation mode (`-P`: every placement in both starting orders,
-  as hills such as nano score) as the CLI's `-P`, `permutate` in Python and
-  Ruby, and `exact()` in Wasm.
+- [Permutation mode (`-P`)](#permutation-mode--p): pMARS's way of playing
+  every placement in both starting orders, as hills such as nano score. One
+  round loop (`match.c`) now serves the CLI, Python, Ruby and Wasm, so
+  placements, starting order and P-space handling are the same in all of them.
+- [WebAssembly](wasm/README.md): browser/Worker and Node builds, including a
+  persistent fighter for 2 to 36 warriors that corewar.dev uses.
 - [Performance changes](README-performance.md): MOV.I shortcuts, cached
   two-warrior process queues, DAT-count early termination, and optional
   builds specialized for fixed hill settings.
@@ -64,9 +65,39 @@ The original README's Pentium-era speed claims above are historical. See the
 benchmark reports for measurements of the updated engine on specific hardware
 and workloads. Automated builds and tagged releases are described below.
 
+### Permutation mode (-P)
+
+As in pMARS, `-P` plays two warriors so that each round uses a not yet used
+pair of (position of the second warrior, warrior that moves first). Without
+`-r`, a match plays every pair once: `2·(coresize − 2·mindistance + 1)` rounds,
+142 on nano and 15,602 on a standard 8000-cell hill. Hills such as SAL's nano
+score this way. With `-r`, rounds draw pairs without replacement and start a
+new pass when all are used.
+
+```sh
+exmars -P -s 80 -c 800 -p 80 -l 5 -d 5 a.red b.red         # all 142 nano placements
+exmars -P -F 9 -s 80 -c 800 -p 80 -l 5 -d 5 a.red b.red    # same rounds in pMARS -P -F 9 order
+```
+
+It is one match, so P-space carries over between its rounds, and `-F` fixes
+their order exactly as pMARS does; results equal pMARS's `-P` round for round.
+Like pMARS, `-P` needs exactly two warriors. Python and Ruby have it as
+`mars.permutate = True` (with `mars.permutations` for the full count), Wasm as
+`fighter.exact(a, b, {position})`.
+
+### What's new in 0.01-ai.2
+
+- Permutation mode (`-P`, above) and one shared round loop (`match.c`).
+- WebAssembly builds, tournament API and a persistent fighter (2 to 36
+  warriors, warriors assembled once) for corewar.dev, compared against pMARS.
+- The assembler returns errors instead of calling `exit()`, so the library
+  and Wasm builds survive bad input.
+- Python: `Mars.load()`/`unload()` handles for warriors fought often, and
+  fixed reference leaks when parsing warriors.
+
 ### Release version
 
-This fork's version is **0.01-ai.1**, with release tag **`v0.01-ai.1`**:
+This fork's version is **0.01-ai.2**, with release tag **`v0.01-ai.2`**:
 **AI-assisted fork of exMARS 0.01**. Martin's
 [original release page](https://martin.ankerl.com/2006/07/29/corwars-simulators-overview/)
 lists `exmars-0.01.tar.gz`. Fork revisions use `0.01-ai.1`, `0.01-ai.2`, and so on;
@@ -130,8 +161,8 @@ platform's build and tests pass. Release downloads do not have the 30-day
 artifact expiration. For example, after committing the workflow changes:
 
 ```sh
-git tag v0.01-ai.1
-git push origin v0.01-ai.1
+git tag v0.01-ai.2
+git push origin v0.01-ai.2
 ```
 
 The tagged commit must contain the workflow. Re-running a tag's workflow updates
