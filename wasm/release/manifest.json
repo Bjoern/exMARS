@@ -1,6 +1,6 @@
 {
   "compiler": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 4.0.23 (7a5d93b50f6a3a35e85a0d2fc9e667b8498e6aed)",
-  "builtFromParentCommit": "df56df19122b9bce785c2ed2bf4c9462f3a5db93",
+  "builtFromParentCommit": "643943e2db99c28ea3ec21f76fdeb145fb0bfef0",
   "commands": [
     [
       "emcc",
@@ -43,7 +43,7 @@
       "-sALLOW_MEMORY_GROWTH=1",
       "-sMAXIMUM_MEMORY=536870912",
       "-sSTACK_SIZE=2097152",
-      "-sEXPORTED_FUNCTIONS=[\"_ex_assemble\", \"_ex_result\", \"_ex_name\", \"_ex_author\", \"_ex_message\", \"_malloc\", \"_free\"]",
+      "-sEXPORTED_FUNCTIONS=[\"_ex_assemble\", \"_ex_set_icws88\", \"_ex_result\", \"_ex_name\", \"_ex_author\", \"_ex_message\", \"_malloc\", \"_free\"]",
       "-sEXPORTED_RUNTIME_METHODS=[\"HEAPU8\",\"HEAP32\",\"UTF8ToString\"]",
       "-o",
       "dist/wasm/assembler.mjs"
@@ -51,12 +51,12 @@
   ],
   "sources": {
     "wasm/fighter.c": "7b7aa0c0ed947e6f9db2c188fc8135175bde4cc89750aed4e183ecad5b850b6f",
-    "wasm/assembler.c": "540c40a340c12c141065381d246dc41955f53757e608c9996fa58b2d26f231c2",
-    "wasm/fighter-client.mjs": "8066b9f4a2916419efb7fed4a4b7ee6552605fd2b707e26876c2d65b004f1fa0",
-    "wasm/build.py": "a6850d8e87f23a9dae187bb536d330e7d403975c77d0d7e0c935d36b2a5ec10f",
+    "wasm/assembler.c": "f34ef8eb1443f3ca20f000e85f86b2ba623ab0b487c87a41599a9623417bdb2d",
+    "wasm/fighter-client.mjs": "7971e9ef26853f7a1c97606f5962cbcb5f105e3fcdfc51c0adc90a46bc6f4615",
+    "wasm/build.py": "e98dd9cf77989bdf61019111dbbbf390c08e3c133fa35ada543dad7c456c02f9",
     "wasm/release.py": "9dfb76874b9691e30a0ebec61dd8508b1b81d8d9017ac65e1e8a1dd8d927a102",
-    "wasm/README.md": "78eef31b6fd8d22f10724342f282574d5b438760ff29c4a464776030118924dc",
-    "pmars.c": "99b9b6cc4a3914ee49282434dd748f9db1964acbdba8875d8a60ff2aa10cce40",
+    "wasm/README.md": "60292bf2c06ef7fd5f2078f68a318194f341831dc3388af194d42d0cbf059eed",
+    "pmars.c": "f6a35d4dbdae30de19796ab8f8844acebf35081cd5b9a1724bbc25f1bed48754",
     "sim.c": "a1ac12f98b3b084aa6228e2c0016fad7a71e821d450238cc20cbda4b35130eb4",
     "sim_loop.inc": "24cede1b57533d032d35496e8c3b88bfd8854be6c089c52bcfcbcfc4df7f6695",
     "pspace.c": "88f107b46f7101a95dec5f5d27c3bbe73789b3dd639ffdc088648bfa295bba1b",
@@ -69,14 +69,14 @@
     "pspace.h": "4a7ccd893621cc592ac00638cae4bfdecc9a01185ff5afb0ec4465bc0a7523e8",
     "hill_config.h": "720f2da53099a9e449a6ba3a8a8af593c83ee1c30a5ef58a3f828a19fe31fb89",
     "Warrior.py": "211ceb1a84494edff427dc7cef99f407e1457bdba71f60665ca66ccba2ac2afc",
-    "README.md": "3fd971b1fe84e6c62f6c8398c3308a0aff19fe05b5a339f9798fab4e03dfcc39"
+    "README.md": "5abef028eef68a51f826dce4c53fc10010a196fb77f4f31a29729bc22a7d0a36"
   },
   "files": {
     "fighter.mjs": "874769fc835a80276b17cb318832b5afc4a3750b6d53f2afd4cf3b95b23bcc86",
     "fighter.wasm": "d254ea790f28e124e828a67f9148a309866d248d2b45fd8834135bed5d4d7e25",
-    "assembler.mjs": "454c2b37b1e7b590ae49f6b83b93c6b463da92f9c3e8e8caf8dd33bd01fb4db8",
-    "assembler.wasm": "662540c9121ad7d8b979eeebf01a86fd2e0f9eb5f64ef85c0cb67e0236230380",
-    "fighter-client.mjs": "8066b9f4a2916419efb7fed4a4b7ee6552605fd2b707e26876c2d65b004f1fa0",
-    "exmars-fighter-src.zip": "c1036f9d9f3b6f75704db6b63c1012a47f7cf277ebc3dc1b3a87b63bd3809486"
+    "assembler.mjs": "ca5d02953daf61fa329f928c61d01192a4f4d2629e30ce40c7edfd687ba33c01",
+    "assembler.wasm": "b66391297cb64f67b6592dc75f0999cbf9cfb354e4e3d0085c4f565b00304a54",
+    "fighter-client.mjs": "7971e9ef26853f7a1c97606f5962cbcb5f105e3fcdfc51c0adc90a46bc6f4615",
+    "exmars-fighter-src.zip": "059dd4d96b1a401b2c2c0d9c56f9cba34ec4c52cedba333138d48fa34c50a9ea"
   }
 }
