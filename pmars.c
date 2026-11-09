@@ -1133,7 +1133,7 @@ nocmnt(str)
 static void
 textout(char* str)
 {
-    fprintf(stderr, str);
+    fputs(str, stderr);   /* str holds warrior text: never a format */
 }
 
 /* ******************************************************************* */
