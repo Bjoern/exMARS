@@ -95,6 +95,13 @@ same with or without it. Python and Ruby have it as `mars.icws88 = True` (for
 later parses), Wasm as `assemble(source, hill, {icws88: true})` and
 `runMatch(warriors, {icws88: true})`.
 
+### What's new in 0.01-ai.3
+
+- ICWS'88 mode (`-8`, above), with pMARS's checks and messages, in the CLI,
+  Python, Ruby and Wasm (`icws88`).
+- Assembler messages print a source line containing `%` as it is (it was
+  used as a format string).
+
 ### What's new in 0.01-ai.2
 
 - Permutation mode (`-P`, above) and one shared round loop (`match.c`).
@@ -107,7 +114,7 @@ later parses), Wasm as `assemble(source, hill, {icws88: true})` and
 
 ### Release version
 
-This fork's version is **0.01-ai.2**, with release tag **`v0.01-ai.2`**:
+This fork's version is **0.01-ai.3**, with release tag **`v0.01-ai.3`**:
 **AI-assisted fork of exMARS 0.01**. Martin's
 [original release page](https://martin.ankerl.com/2006/07/29/corwars-simulators-overview/)
 lists `exmars-0.01.tar.gz`. Fork revisions use `0.01-ai.1`, `0.01-ai.2`, and so on;
@@ -171,8 +178,8 @@ platform's build and tests pass. Release downloads do not have the 30-day
 artifact expiration. For example, after committing the workflow changes:
 
 ```sh
-git tag v0.01-ai.2
-git push origin v0.01-ai.2
+git tag v0.01-ai.3
+git push origin v0.01-ai.3
 ```
 
 The tagged commit must contain the workflow. Re-running a tag's workflow updates
