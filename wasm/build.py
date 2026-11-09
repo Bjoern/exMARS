@@ -57,7 +57,7 @@ build_api('fighter', [ROOT / 'wasm/fighter.c', ROOT / 'sim.c', ROOT / 'pspace.c'
           ['ex_configure', 'ex_load', 'ex_unload', 'ex_fight', 'ex_fight_exact', 'ex_fight_many', 'ex_set_early_exit', 'ex_error'], 0)
 # Assembler: kept apart from the fighter. Its parser returns errors instead of exiting.
 build_api('assembler', [ROOT / 'wasm/assembler.c', ROOT / 'pmars.c', ROOT / 'sim.c', ROOT / 'pspace.c', ROOT / 'match.c'],
-          ['ex_assemble', 'ex_result', 'ex_name', 'ex_author', 'ex_message'], 1, ['-Dmain=exmars_cli_main'])
+          ['ex_assemble', 'ex_set_icws88', 'ex_result', 'ex_name', 'ex_author', 'ex_message'], 1, ['-Dmain=exmars_cli_main'])
 for name, defines in [('exmars', []), ('reference-exmars', ['-DEXMARS_REFERENCE'])]:
     build(name, ROOT, [ROOT / f for f in ['pmars.c', 'sim.c', 'pspace.c', 'match.c']], defines)
 for name, defines in [('optimized-exmars', ['-DEARLY=1']), ('exact-exmars', ['-DEARLY=0'])]:

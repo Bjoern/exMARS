@@ -31,6 +31,15 @@ await assert.rejects(runMatch([live,dead], {coreSize:80}));
 await assert.rejects(runMatch([live,dead], {permutate:true}), /Unsupported match option/);
 await assert.rejects(runMatch([live,dead], {earlyExit:'false'}));
 await assert.rejects(runMatch([live,'this is invalid redcode'], {rounds:1}));
+// icws88: pMARS -8 rules on every tournament engine.
+const dead88 = ';redcode\n;assert 1\ndat #0,#0\nend\n', postinc = ';redcode\n;assert 1\nmov 0,>1\nend\n';
+for (const engine of ['exmars','reference-exmars','pmars']) {
+  const r = await runMatch([live, dead88], {engine, rounds:4, cycles:100, icws88:true});
+  assert.deepEqual([r.wins,r.ties,r.losses], [4,0,0]);
+  await runMatch([postinc, dead88], {engine, rounds:1, cycles:100});
+  await assert.rejects(runMatch([postinc, dead88], {engine, rounds:1, cycles:100, icws88:true}), /'88/);
+}
+await assert.rejects(runMatch([live,dead], {icws88:1}), /icws88 must be boolean/);
 const priorExit = process.exitCode;
 const badArgs = ['--not-an-option'];
 assert.notEqual((await runCLI('exmars', badArgs)).exitCode, 0);

@@ -274,6 +274,21 @@ m.permutate = True
 a, b = m.parse_string(marker(11)), m.parse_string(marker(22))
 check("permutate: P-space kept and owned across the match's rounds", rows(m.fight(a, b)), ["0 6", "0 6"])
 
+# icws88 is pMARS -8: later parses enforce ICWS'88 rules. Off by default.
+W88 = ";redcode\n;assert 1\nstart mov bomb, <ptr\njmp start\nptr dat #0, #10\nbomb dat #0, #0\nend start\n"
+m = Mars.Mars(2, 8000, 80000, 8000, 100, 100)
+check("icws88 defaults to False", m.icws88, False)
+check("without icws88, > is accepted", outcome(lambda: m.parse_string(W88.replace("<ptr", ">ptr"))), "accepted")
+m.icws88 = True
+check("icws88: an '88 warrior is accepted", outcome(lambda: m.parse_string(W88)), "accepted")
+for bad in ("mov bomb, >ptr", "mov bomb, }ptr", "mov.i bomb, <ptr", "seq bomb, <ptr", "mov bomb, #ptr", "jmp #0"):
+    check(f"icws88: '{bad}' is rejected",
+          outcome(lambda: m.parse_string(W88.replace("mov bomb, <ptr", bad))), "ValueError")
+check("icws88: ORG is rejected",
+      outcome(lambda: m.parse_string(W88.replace("end start", "org start\nend"))), "ValueError")
+m.icws88 = False
+check("icws88 can be switched off again", outcome(lambda: m.parse_string(W88.replace("<ptr", ">ptr"))), "accepted")
+
 if args.hills:
     for suite in ("94top50", "psptop50"):
         folder = os.path.join(args.hills, suite)

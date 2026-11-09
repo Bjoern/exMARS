@@ -85,6 +85,16 @@ Like pMARS, `-P` needs exactly two warriors. Python and Ruby have it as
 `mars.permutate = True` (with `mars.permutations` for the full count), Wasm as
 `fighter.exact(a, b, {position})`.
 
+### ICWS'88 mode
+
+`-8` assembles under ICWS'88 rules, as pMARS `-8` does: only the '88 opcodes,
+the `#`, `$`, `@` and `<` modes, no modifiers, `ORG` or `PIN`, and the '88
+operand formats (for example `DAT` takes only `#` or `<`). Anything else is an
+error with pMARS's messages. It changes assembly only; '88 warriors fight the
+same with or without it. Python and Ruby have it as `mars.icws88 = True` (for
+later parses), Wasm as `assemble(source, hill, {icws88: true})` and
+`runMatch(warriors, {icws88: true})`.
+
 ### What's new in 0.01-ai.2
 
 - Permutation mode (`-P`, above) and one shared round loop (`match.c`).

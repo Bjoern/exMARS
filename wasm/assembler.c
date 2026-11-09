@@ -16,6 +16,8 @@
  * using the numbering of Warrior.py / insn.h (the Python binding's tuples,
  * values as the parser produced them; the fighter reduces them mod coreSize).
  * ex_name(), ex_author() and ex_message() return strings.
+ * ex_set_icws88(on) makes later ex_assemble() calls enforce ICWS'88 rules, as
+ * pMARS -8 does (off at start).
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -50,6 +52,9 @@ EX_EXPORT int32_t *ex_result(void) { return result; }
 EX_EXPORT const char *ex_name(void) { return name ? name : ""; }
 EX_EXPORT const char *ex_author(void) { return author ? author : ""; }
 EX_EXPORT const char *ex_message(void) { return message; }
+
+static int icws88 = 0;
+EX_EXPORT int ex_set_icws88(int on) { icws88 = on ? 1 : 0; return 0; }
 
 static char *copy_string(const char *s)
 {
@@ -127,6 +132,7 @@ static int assemble_call(mars_t *mars, warrior_struct *w, const char *source, in
     mars->nWarriors = 2;
     mars->errorcode = SUCCESS;
     mars->errorlevel = WARNING;
+    mars->SWITCH_8 = icws88;
     if (!sim_alloc_bufs(mars)) {
         /* sim_free_bufs is unsafe after a partial allocation (see fighter.c): leak those. */
         mars->warriors = NULL;

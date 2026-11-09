@@ -214,7 +214,8 @@ dead first), `_ex_set_early_exit(on)` and
 Status < 0 means an error; nothing on this path calls `exit()`. The handle
 table grows as needed. `assembler.mjs` exports `_ex_assemble(source, coreSize,
 cycles, processes, maxLength, minDistance, rounds)` with `_ex_result()`,
-`_ex_name()`, `_ex_author()` and `_ex_message()`; see `wasm/assembler.c`.
+`_ex_name()`, `_ex_author()` and `_ex_message()`, and `_ex_set_icws88(on)` for
+pMARS `-8` rules (`assemble(source, hill, {icws88: true})`); see `wasm/assembler.c`.
 
 ### Tests and throughput
 

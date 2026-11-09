@@ -148,22 +148,26 @@ function splitDiagnostics(lines) {
  * the calls of a realm and replaced only after a trap (or an exit() of an older
  * build) or when its memory has grown (see ASSEMBLER_MEMORY_LIMIT); everything a call
  * returns is read before the next call can run.
- * Options: rounds (default 1, as the Python binding) sets the ROUNDS constant.
+ * Options: rounds (default 1, as the Python binding) sets the ROUNDS constant;
+ * icws88 (default false) enforces ICWS'88 rules, as pMARS -8.
  */
-export async function assemble(source, hill, {rounds = 1} = {}) {
+export async function assemble(source, hill, {rounds = 1, icws88 = false} = {}) {
   if (typeof source !== 'string') throw new TypeError('source must be a string');
   if (new TextEncoder().encode(source).length > MAX_SOURCE_BYTES) throw new RangeError('Warrior source exceeds 64 KiB');
   if (source.includes('\0')) throw new RangeError('Warrior source contains a NUL character');
   const h = validateHill(hill);
   if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) throw new RangeError('Invalid rounds');
+  if (typeof icws88 !== 'boolean') throw new TypeError('icws88 must be boolean');
   const stderr = [];
   const {module, sink, entry} = await assemblerInstance();
+  if (icws88 && !module._ex_set_icws88) throw new Error('This assembler build has no ICWS\'88 mode');
   // From here to the return nothing awaits, so no other call uses the instance meanwhile.
   const restore = nodeExitGuard();
   let status;
   sink.lines = stderr;
   try {
     const src = writeString(module, source);
+    module._ex_set_icws88?.(icws88 ? 1 : 0);
     status = module._ex_assemble(src, h.coreSize, h.cycles, h.processes, h.maxLength, h.minDistance, rounds);
     module._free(src);
   } catch (e) {

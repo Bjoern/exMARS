@@ -483,6 +483,20 @@ print(json.dumps(out))
   const pin = await assemble(fixture('pin_reader.red'), std);
   assert.equal(pin.pin, 123);
   assert.equal((await assemble(';assert 1\ndat #ROUNDS, #0\n', nano, {rounds: 7})).instructions[0][3], 7);
+  // icws88: pMARS -8 rules for that call only; the same source with and without.
+  const w88 = ';redcode\n;assert 1\nstart mov bomb, <ptr\njmp start\nptr dat #0, #10\nbomb dat #0, #0\nend start\n';
+  const plain88 = await assemble(w88, std), strict88 = await assemble(w88, std, {icws88: true});
+  assert.equal(strict88.ok, true);
+  assert.deepEqual(strict88.instructions, plain88.instructions);
+  for (const bad of ['mov bomb, >ptr', 'mov bomb, }ptr', 'mov.i bomb, <ptr', 'seq bomb, <ptr', 'mov bomb, #ptr', 'jmp #0']) {
+    const src = w88.replace('mov bomb, <ptr', bad);
+    const r88 = await assemble(src, std, {icws88: true});
+    assert.equal(r88.ok, false, bad);
+    assert.match(r88.errors, /'88 format/, bad);
+  }
+  assert.equal((await assemble(w88.replace('end start', 'org start\nend'), std, {icws88: true})).ok, false);
+  assert.equal((await assemble(w88.replace('<ptr', '>ptr'), std)).ok, true, 'icws88 is per call');
+  await assert.rejects(assemble(w88, std, {icws88: 'yes'}), /icws88 must be boolean/);
   await assert.rejects(assemble('jmp 0', {...nano, rounds: 3}), /Unsupported hill setting/);
   await assert.rejects(assemble('x'.repeat(65537), nano), /64 KiB/);
   await assert.rejects(assemble('jmp 0', {...nano, minDistance: 41}), /Invalid hill/);

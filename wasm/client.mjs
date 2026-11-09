@@ -29,8 +29,9 @@ export async function runMatch(warriors, options = {}) {
     throw new TypeError('Supply two Redcode source strings');
   if (warriors.some(w => new TextEncoder().encode(w).length > 65536)) throw new RangeError('Warrior source exceeds 64 KiB');
   for (const key of Object.keys(options))
-    if (!(key in defaults) && !['engine', 'earlyExit'].includes(key)) throw new Error(`Unsupported match option: ${key}`);
+    if (!(key in defaults) && !['engine', 'earlyExit', 'icws88'].includes(key)) throw new Error(`Unsupported match option: ${key}`);
   if (options.earlyExit !== undefined && typeof options.earlyExit !== 'boolean') throw new TypeError('earlyExit must be boolean');
+  if (options.icws88 !== undefined && typeof options.icws88 !== 'boolean') throw new TypeError('icws88 must be boolean');
   const o = {...defaults, ...options};
   for (const k of Object.keys(defaults)) if (!Number.isSafeInteger(o[k]) || o[k] < 1) throw new RangeError(`Invalid ${k}`);
   if (o.coreSize > 65535 || o.processes > 1000000 || o.cycles > 100000000 || o.rounds > 1000000 ||
@@ -41,6 +42,7 @@ export async function runMatch(warriors, options = {}) {
   const args = ['-b', '-k', '-s', ''+o.coreSize, '-c', ''+o.cycles, '-p', ''+o.processes,
     '-l', ''+o.maxLength, '-d', ''+o.minDistance, '-r', ''+o.rounds, '-F', ''+o.position];
   if (o.earlyExit === false && engine !== 'pmars') args.push('-X');
+  if (o.icws88) args.push('-8');   // ICWS'88 rules; pMARS and exMARS both take -8
   const result = await runCLI(engine, [...args, 'a.red', 'b.red'], {'a.red': warriors[0], 'b.red': warriors[1]});
   const rows = result.stdout.trim().split('\n').slice(-2).map(s => s.trim().split(/\s+/).map(Number));
   if (result.exitCode || rows.length !== 2 || rows.some(r => r.length !== 2 || r.some(n => !Number.isSafeInteger(n) || n < 0)) ||

@@ -54,6 +54,10 @@ for h in opponents:
     m.fight(candidate, h)                      # = pmars -P (all 142 placements)
 ```
 
+`m.icws88 = True` is pMARS's `-8`: later `parse_file()`/`parse_string()` calls
+enforce ICWS'88 rules and raise `ValueError` for anything '88 doesn't allow.
+Warriors parsed earlier are not checked again.
+
 Run `python tests/python_bindings/run.py bin` for binding regressions.
 Safe early ties are enabled by default. Set `m.early_exit = False` for exact
 final core/queue state; scores and P-space are preserved in both modes.

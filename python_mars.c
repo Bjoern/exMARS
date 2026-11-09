@@ -771,6 +771,20 @@ static int Mars_set_early_exit(MarsObject *self, PyObject *value, void *closure)
     self->mars->earlyExit = enabled;
     return 0;
 }
+static PyObject * Mars_get_icws88(MarsObject *self, void *closure) {
+    return PyBool_FromLong(self->mars->SWITCH_8);
+}
+static int Mars_set_icws88(MarsObject *self, PyObject *value, void *closure) {
+    int enabled;
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the icws88 attribute");
+        return -1;
+    }
+    enabled = PyObject_IsTrue(value);
+    if (enabled < 0) return -1;
+    self->mars->SWITCH_8 = enabled;
+    return 0;
+}
 static PyObject * Mars_get_fixed_position(MarsObject *self, void *closure) {
     return PyLong_FromLong(self->mars->fixedPosition);
 }
@@ -822,6 +836,9 @@ static PyGetSetDef Mars_getseters[] = {
     {"rounds", (getter)Mars_get_rounds, (setter)Mars_set_rounds, "Number of rounds to fight", NULL},
     {"early_exit", (getter)Mars_get_early_exit, (setter)Mars_set_early_exit,
      "Allow proven early ties (default True); preserves results/P-space, not final core/queues", NULL},
+    {"icws88", (getter)Mars_get_icws88, (setter)Mars_set_icws88,
+     "Enforce ICWS'88 rules in parse()/parse_string(), like pMARS -8 (default False); "
+     "warriors parsed earlier are not checked again", NULL},
     {"fixed_position", (getter)Mars_get_fixed_position, (setter)Mars_set_fixed_position,
      "Placement seed like the CLI's -F (0 = random, default); every fight() then repeats pMARS's placements", NULL},
     {"permutate", (getter)Mars_get_permutate, (setter)Mars_set_permutate,

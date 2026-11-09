@@ -1360,7 +1360,10 @@ automaton(mars_t* mars, char* expr, stateCol state, mem_struct* cell)
         case ADDRTOKEN:
             cell->A_mode = (FIELD_T) ch_in_set(*(mars->token), addr_sym);
             if (cell->A_mode > 4) {
-                cell->A_mode = SYM_TO_INDIR_A(cell->A_mode);
+                if (mars->SWITCH_8)
+                    errprn(mars, M88ERR, mars->aline, "[*{}]");
+                else
+                    cell->A_mode = SYM_TO_INDIR_A(cell->A_mode);
             }
             automaton(mars, (char *) expr + idx, S_EXP_FS, cell);
             break;
@@ -1425,7 +1428,10 @@ automaton(mars_t* mars, char* expr, stateCol state, mem_struct* cell)
         case ADDRTOKEN:
             cell->A_mode = (FIELD_T) ch_in_set(*(mars->token), addr_sym);
             if (cell->A_mode > 4) {
-                cell->A_mode = SYM_TO_INDIR_A(cell->A_mode);
+                if (mars->SWITCH_8)
+                    errprn(mars, M88ERR, mars->aline, "[*{}]");
+                else
+                    cell->A_mode = SYM_TO_INDIR_A(cell->A_mode);
             }
             automaton(mars, (char *) expr + idx, S_EXP_FS, cell);
             break;
@@ -1536,7 +1542,10 @@ automaton(mars_t* mars, char* expr, stateCol state, mem_struct* cell)
         case ADDRTOKEN:
             cell->B_mode = (FIELD_T) ch_in_set(*(mars->token), addr_sym);
             if (cell->B_mode > 4) {
-                cell->B_mode = SYM_TO_INDIR_A(cell->B_mode);
+                if (mars->SWITCH_8)
+                    errprn(mars, M88ERR, mars->aline, "[*{}]");
+                else
+                    cell->B_mode = SYM_TO_INDIR_A(cell->B_mode);
             }
             automaton(mars, (char *) expr + idx, S_EXPR, cell);
             break;
@@ -1645,6 +1654,60 @@ automaton(mars_t* mars, char* expr, stateCol state, mem_struct* cell)
 
 /* ******************************************************************* */
 
+/* ICWS'88 rules (pMARS -8, asm.c): only the '88 opcodes, the #, $, @ and <
+ * modes, no modifiers, and the '88 operand formats. Called once the operands
+ * are parsed, before the default modifier is chosen. */
+static void
+check_icws88(mars_t* mars, mem_struct* cell)
+{
+    switch (mars->opcode) {
+    case DAT:
+        if (((cell->A_mode != (FIELD_T) IMMEDIATE) &&
+             (cell->A_mode != (FIELD_T) PREDECR)) ||
+            ((cell->B_mode != (FIELD_T) IMMEDIATE) &&
+             (cell->B_mode != (FIELD_T) PREDECR)))
+            errprn(mars, F88ERR, mars->aline, "DAT [#<] [#<]");
+        break;
+    case MOV:
+    case ADD:
+    case SUB:
+    case CMP:
+        if (cell->B_mode == (FIELD_T) IMMEDIATE) {
+            snprintf(mars->token, MAXALLCHAR, "%s [#$@<] [$@<]", opname[mars->opcode]);
+            errprn(mars, F88ERR, mars->aline, mars->token);
+        }
+        break;
+    case JMP:
+    case JMZ:
+    case JMN:
+    case DJN:
+    case SPL:
+        if (cell->A_mode == (FIELD_T) IMMEDIATE) {
+            snprintf(mars->token, MAXALLCHAR, "%s [$@<] [#$@<]", opname[mars->opcode]);
+            errprn(mars, F88ERR, mars->aline, mars->token);
+        }
+        break;
+    case MUL:
+    case DIV:
+    case MOD:
+    case SEQ:
+    case SNE:
+    case NOP:
+    case LDP:
+    case STP:
+        errprn(mars, M88ERR, mars->aline, opname[mars->opcode]);
+        break;
+    default:
+        break;
+    }
+
+    if (mars->modifier != MODNUM)
+        errprn(mars, M88ERR, mars->aline, ".");
+    if ((cell->A_mode == (FIELD_T) POSTINC) ||
+        (cell->B_mode == (FIELD_T) POSTINC))
+        errprn(mars, M88ERR, mars->aline, ">");
+}
+
 static void
 dfashell(mars_t* mars, char* expr, mem_struct* cell)
 {
@@ -1679,6 +1742,9 @@ dfashell(mars_t* mars, char* expr, mem_struct* cell)
             default:
                 errprn(mars, NOPERR, mars->aline, opname[mars->opcode]);        /* opcode < OPNUM */
             }
+
+        if (mars->SWITCH_8)
+            check_icws88(mars, cell);
 
         if (mars->modifier == MODNUM)        /* no modifier, pick default */
             switch (mars->opcode) {
@@ -2247,6 +2313,9 @@ void encode_warrior(mars_t* mars, warrior_struct* w, uShrt sspnt)
                             if (evalerrA == PMARS_OVERFLOW)
                                 errprn(mars, OFLERR, mars->aline, "");
 
+                            if ((mars->opcode == ORGOP || mars->opcode == PINOP) && mars->SWITCH_8)
+                                errprn(mars, M88ERR, mars->aline, opname[mars->opcode]);
+
                             if (mars->opcode == ORGOP)
                                 w->offset = normalize(mars, resultB);
 #ifdef SHARED_PSPACE
@@ -2527,7 +2596,8 @@ void usage(void)
     printf("usage: exmars [opts] warriors...\n");
     printf("      exmars --version\n");
     printf("opts: -r <rounds>, -c <cycles>, -F <pos>, -s <coresize>,\n"
-           "      -p <maxprocs>, -l <maxlen>, -d <minsep>, -P, -bk, -X\n"
+           "      -p <maxprocs>, -l <maxlen>, -d <minsep>, -P, -8, -bk, -X\n"
+           "      -8: enforce ICWS'88 rules when assembling (pMARS -8)\n"
            "      -P: every placement in both starting orders (pMARS -P); without -r,\n"
            "          2*(coresize-2*minsep+1) rounds play each once\n"
            "      -X: disable default safe early ties; preserve final core/queues\n      -E: enable safe early ties (default; compatibility option)\n");
@@ -2596,6 +2666,7 @@ void readargs(int argc, char** argv, mars_t* mars) {
                     case 'E': mars->earlyExit = 1; break;
                     case 'X': mars->earlyExit = 0; break;
                     case 'P': mars->permutate = 1; break;
+                    case '8': mars->SWITCH_8 = 1; break;
 
                     case 'F':
                         if ( n == argc-1 || !isdigit(argv[n+1][0]) )

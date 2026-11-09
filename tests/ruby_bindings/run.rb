@@ -95,6 +95,19 @@ end
 nano = Mars.new(2, 80, 800, 80, 5, 5)
 check('permutations (nano)', nano.permutations, 142)
 rejected('permutate with three warriors') { Mars.standard(3).permutate = true }
+# icws88 is pMARS -8: later parses enforce ICWS'88 rules. Off by default.
+w88 = "start mov bomb, <ptr\njmp start\nptr dat #0, #10\nbomb dat #0, #0"
+m88 = Mars.standard(2)
+check('icws88 defaults to false', m88.icws88, false)
+check('without icws88, > is accepted', parse_text(m88, w88.sub('<ptr', '>ptr')).class, Warrior)
+m88.icws88 = true
+check('icws88: an 88 warrior is accepted', parse_text(m88, w88).class, Warrior)
+['mov bomb, >ptr', 'mov bomb, }ptr', 'mov.i bomb, <ptr', 'seq bomb, <ptr', 'mov bomb, #ptr', 'jmp #0'].each do |bad|
+  rejected("icws88: #{bad} is rejected") { parse_text(m88, w88.sub('mov bomb, <ptr', bad)) }
+end
+rejected('icws88: ORG is rejected') { parse_text(m88, "org start\n" + w88) }
+m88.icws88 = false
+check('icws88 can be switched off again', parse_text(m88, w88.sub('<ptr', '>ptr')).class, Warrior)
 sources = ["add.ab #13, 2\nmov.i 2, @1\njmp -2\ndat 0, 0", "spl 0\nmov.i -1, 7\njmp -1"]
 Tempfile.create(['perm-a', '.red'], __dir__) do |fa|
   Tempfile.create(['perm-b', '.red'], __dir__) do |fb|

@@ -12,3 +12,5 @@ Assembly and malformed warrior inputs raise exceptions. Tests are AI-assisted.
 
 Safe process-count termination is available on the Ruby maintenance branch.
 `early_exit` defaults to true; set it to false for full execution.
+`icws88 = true` is pMARS -8: later parses raise ArgumentError for anything
+ICWS'88 doesn't allow.

@@ -257,6 +257,20 @@ VALUE mars_set_fixed_position(VALUE self, VALUE value) {
     return value;
 }
 
+VALUE mars_get_icws88(VALUE self) {
+    mars_t *mars;
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    return mars->SWITCH_8 ? Qtrue : Qfalse;
+}
+
+/* pMARS -8: later parses enforce ICWS'88 rules. */
+VALUE mars_set_icws88(VALUE self, VALUE value) {
+    mars_t *mars;
+    TypedData_Get_Struct(self, mars_t, &mars_type, mars);
+    mars->SWITCH_8 = RTEST(value);
+    return value;
+}
+
 VALUE mars_get_permutate(VALUE self) {
     mars_t *mars;
     TypedData_Get_Struct(self, mars_t, &mars_type, mars);
@@ -516,6 +530,8 @@ RUBY_FUNC_EXPORTED void Init_Mars(void) {
     rb_define_method(cMars, "rounds=", mars_set_rounds, 1);
     rb_define_method(cMars, "early_exit", mars_get_early_exit, 0);
     rb_define_method(cMars, "early_exit=", mars_set_early_exit, 1);
+    rb_define_method(cMars, "icws88", mars_get_icws88, 0);
+    rb_define_method(cMars, "icws88=", mars_set_icws88, 1);
     rb_define_method(cMars, "permutate", mars_get_permutate, 0);
     rb_define_method(cMars, "permutate=", mars_set_permutate, 1);
     rb_define_method(cMars, "permutations", mars_get_permutations, 0);
