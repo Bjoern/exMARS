@@ -170,7 +170,10 @@ archive inside it. Unix builds use `.tar.gz` to preserve executable permissions;
 Windows builds contain `exmars.exe` in a `.zip` and do not require MSYS2.
 These are generic optimized builds; Python and Ruby bindings are not included.
 Linux binaries are built on Ubuntu 22.04 (glibc 2.35 or newer required); macOS
-binaries are built on macOS 15. These builds are not signed or notarized.
+binaries are built on macOS 15, both on Intel: the Apple Silicon build is
+cross-compiled (`clang -arch arm64`) because hosted Apple Silicon runners are
+often unavailable, so its CLI tests can't run there (the engine tests do, and
+every other platform runs all tests). These builds are not signed or notarized.
 
 Tag pushes also publish a [GitHub Release](https://github.com/Bjoern/exMARS/releases)
 with all five archives and automatically generated release notes, after every

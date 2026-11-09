@@ -29,19 +29,33 @@ jobs:
           - platform: macos-x86_64
             runner: macos-15-intel
             cc: clang
+          # Cross-built on Intel: hosted Apple Silicon runners often have no capacity
+          # (jobs waited out the timeout). Intel can't run arm64 binaries, so the CLI
+          # tests are skipped for it; the engine tests still build and run natively,
+          # and every other platform, macOS Intel included, runs the full tests.
           - platform: macos-arm64
-            runner: macos-15
-            cc: clang
+            runner: macos-15-intel
+            cc: clang -arch arm64
+            arch: arm64
+            cross: true
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Build
-        run: make -j2 CC=${{ matrix.cc }}
-      - name: Test CLI and engine
+        run: make -j2 CC="${{ matrix.cc }}"
+      - name: Check architecture
+        if: matrix.arch
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
-          python3 tests/pmars_compat/run.py ./exmars
-          python3 tests/engine/check_early.py
+          lipo -archs exmars
+          test "$(lipo -archs exmars)" = "$ARCH"
+      - name: Test CLI
+        if: ${{ !matrix.cross }}
+        run: python3 tests/pmars_compat/run.py ./exmars
+      - name: Test engine
+        run: python3 tests/engine/check_early.py
       - name: Package
         env:
           PLATFORM: ${{ matrix.platform }}
